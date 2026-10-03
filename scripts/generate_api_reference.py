@@ -233,6 +233,15 @@ def _response_section(spec, op):
 
 # ── Route introspection ──────────────────────────────────────────────────────
 
+def _iter_routes():
+    """Yield route-like objects across FastAPI route container variants."""
+    for route in app.routes:
+        yield route
+        contexts = getattr(route, "effective_route_contexts", None)
+        if callable(contexts):
+            yield from contexts()
+
+
 def _auth_label(route):
     names = []
     stack = list(getattr(route, "dependant", None).dependencies) if hasattr(route, "dependant") else []
@@ -284,7 +293,7 @@ def build():
     used = _used_paths()
     grouped = defaultdict(list)
 
-    for route in app.routes:
+    for route in _iter_routes():
         path = getattr(route, "path", None)
         methods = getattr(route, "methods", None) or set()
         if not path or not path.startswith("/v1"):
