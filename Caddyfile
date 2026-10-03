@@ -1,0 +1,85 @@
+# Talyn edge config: TLS termination, then route straight to the services.
+#
+# No frontend is deployed, so there is no web container. The old shape was
+# caddy -> web (nginx) -> backend/coach, which kept the browser same-origin.
+# Without it, callers reach the API host directly and CORS applies — so
+# CORS_ORIGINS (backend and coach) must list the calling origin. If a
+# frontend is deployed again, put the web container back in front; the git
+# history shows what that looked like.
+#
+# Caddy obtains and renews certificates automatically. Set ACME_EMAIL in .env
+# and point the API hostname's DNS at this host before the first deploy.
+
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$API_HOST} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# If port 80 is blocked and the HTTP-01 challenge cannot run, use the
+	# TLS-ALPN challenge on 443 instead (see DEPLOYMENT.md troubleshooting):
+	# tls {
+	# 	disable_http_challenge
+	# }
+
+	# Backend API. Client IPs come from X-Forwarded-For, which the backend
+	# trusts for rate limiting.
+	@v1 path /v1/* /health
+	handle @v1 {
+		reverse_proxy backend:8000 {
+			# Pass through the app's own X-Request-ID instead of replacing
+			# it, so one id spans caddy -> FastAPI in the logs.
+			header_up X-Request-ID {http.request.header.X-Request-ID}
+
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+
+			transport http {
+				read_timeout 120s
+			}
+		}
+	}
+
+	# Coach endpoints. Same JWT, different service.
+	#
+	# The coach's routes are not all under /coach — it also serves /path,
+	# /personalize, /revision, /mission, /buddy and /insights. Each is listed
+	# so callers can use their real names.
+	@coach path /coach/* /path/* /personalize/* /revision/* /mission/* /buddy/* /insights/*
+	handle @coach {
+		reverse_proxy coach:8001 {
+			header_up X-Request-ID {http.request.header.X-Request-ID}
+
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+
+			# Claude can take a while on a long study plan.
+			transport http {
+				read_timeout 180s
+				write_timeout 180s
+			}
+		}
+	}
+
+	# Anything else is not an API route. A 404 with a plain message, not a
+	# guess at what the caller wanted.
+	handle {
+		respond "Talyn API. No browser UI is served here." 404
+	}
+
+	# Query strings can carry tokens during OAuth and payment callbacks, and
+	# they appear in these logs — treat caddy's logs as sensitive.
+	log {
+		output stdout
+		format json
+	}
+}

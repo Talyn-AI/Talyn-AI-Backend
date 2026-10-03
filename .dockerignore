@@ -1,0 +1,21 @@
+# Keep the build context small and free of secrets. Anything listed here is
+# invisible to `docker build`, so a stray .env can never land in an image.
+.env
+.env.*
+!.env.example
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.git/
+.gitignore
+tests/
+.pytest_cache/
+README.md
+Dockerfile
+.dockerignore
+.vscode/
+.idea/
+Thumbs.db

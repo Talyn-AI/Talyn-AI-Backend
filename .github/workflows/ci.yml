@@ -1,0 +1,135 @@
+name: CI
+
+# Backend repo: backend tests, backend Docker build, compose validity.
+# The coach has its own workflow in its repo. Secrets never enter this
+# workflow — it has no deploy job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch cancels the older run. On a busy repo this
+# saves more CI minutes than it costs in confusion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: talyn
+          POSTGRES_PASSWORD: talyn_ci_password
+          POSTGRES_DB: talyn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U talyn"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        # postgresql-client matches the server major version: a newer pg_dump
+        # against an older server emits settings that server rejects, which
+        # would fail the backup tests for reasons unrelated to the code.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          pip install -r requirements.txt pytest
+
+      # The suite creates its own schema in talyn_test and truncates between
+      # tests, so a stale schema from a previous run can't leak in.
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+psycopg://talyn:talyn_ci_password@localhost:5432/talyn_test
+          TALYN_TEST_DATABASE_URL: postgresql+psycopg://talyn:talyn_ci_password@localhost:5432/talyn_test
+          # Long enough to satisfy the production guard; nothing else is set,
+          # so the app stays in dev and the stub payment provider is allowed.
+          SECRET_KEY: ci-only-not-a-real-secret-0123456789abcdef
+          ENVIRONMENT: dev
+        run: python -m pytest -q
+
+  api-reference:
+    name: API reference is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # API_REFERENCE.md is generated from the OpenAPI schema, so it can only
+      # be wrong in one way: silently, after a route or field changes without
+      # anyone regenerating it. A stale reference is worse than none, because
+      # a frontend dev will trust it. Fails the build instead.
+      - name: Check the committed reference matches the schema
+        env:
+          SECRET_KEY: ci-only-not-a-real-secret-0123456789abcdef
+          DATABASE_URL: postgresql+psycopg://talyn:pw@localhost:5432/talyn_test
+          ENVIRONMENT: dev
+        run: |
+          python -m scripts.generate_api_reference
+          git diff --exit-code API_REFERENCE.md \
+            || (echo "::error::API_REFERENCE.md is stale. Run python -m scripts.generate_api_reference and commit the result." && exit 1)
+
+  docker:
+    name: Backend Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Proves the Dockerfile still builds. Pushing is a deploy concern.
+      - name: Build backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          tags: talyn-backend:ci
+
+  compose:
+    name: Compose config validity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches an interpolation typo or a bad depends_on that only shows up
+      # when a service name changes. The coach builds from a sibling checkout
+      # that does not exist here; `config` only resolves interpolation, so an
+      # empty directory stands in for it. The real context is cloned on the
+      # deploy host (see DEPLOYMENT.md).
+      - name: Stand in for the coach checkout
+        run: mkdir -p talyn-ai-coach
+
+      - name: Validate compose file
+        env:
+          SECRET_KEY: ci-only-not-a-real-secret-0123456789abcdef
+          POSTGRES_PASSWORD: ci_password
+          ACME_EMAIL: ci@example.com
+          API_HOST: api.example.com
+        run: docker compose config --quiet

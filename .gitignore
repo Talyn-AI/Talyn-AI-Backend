@@ -1,0 +1,40 @@
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+# Real credentials. .env.example documents the shape and IS committed.
+.env
+
+# ── Service artifacts ────────────────────────────────────────────────────────
+# Database dumps. scripts/backup.py writes here when run locally, and a dump
+# contains real user data — it must never be committed.
+backups/
+*.dump
+dump*.sql
+*.bak
+
+# Local databases, if sqlite is ever used for a quick experiment.
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Test / tooling output ────────────────────────────────────────────────────
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Runtime logs ─────────────────────────────────────────────────────────────
+*.log
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

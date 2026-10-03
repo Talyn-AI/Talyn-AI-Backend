@@ -1,0 +1,322 @@
+# Talyn — production compose stack. Lives in the backend repo: the backend is
+# the system of record (Postgres, migrations, auth, payments, uploads) and
+# nearly everything here exists for its sake.
+#
+# Shape (no frontend is deployed — the edge routes straight to the services):
+#
+#   internet
+#      │  443/80
+#      ▼
+#   caddy            TLS termination + ACME certs. Only service with published ports.
+#      ├──▶ backend  FastAPI + Postgres (/v1, /health)
+#      └──▶ coach    AI coach (/coach, /path, /insights, …; holds ANTHROPIC_API_KEY)
+#                    │
+#                    ├──▶ postgres   (internal network only)
+#                    └──▶ redis      (internal network only)
+#
+# Postgres and Redis publish no ports at all. Only caddy is reachable from
+# outside, so a database port forward is not one forgotten line away.
+#
+# Layout on the deploy host: this repo and the coach repo side by side.
+# The coach build context below assumes that — /opt/talyn/talyn-backend next
+# to /opt/talyn/talyn-ai-coach. See DEPLOYMENT.md.
+#
+# Before deploying: cp .env.production.example .env, fill in every blank.
+
+name: talyn
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  # ── Postgres ───────────────────────────────────────────────────────────────
+  # Bound to the internal network only. Data survives `docker compose down`
+  # (not `down -v`) via the named volume.
+  postgres:
+    image: postgres:16-alpine
+    <<: *default-restart
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-talyn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-talyn}
+      # Postgres 16 defaults to scram-sha-256; being explicit avoids surprises
+      # if an older client library connects.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-talyn} -d ${POSTGRES_DB:-talyn}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
+    # The database is a stateful singleton: no deploy-time replicas.
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  # Rate-limit counters only. Losing it is survivable (limits fall back to
+  # per-process), which is why there is no volume and no password.
+  redis:
+    image: redis:7-alpine
+    <<: *default-restart
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 320m
+
+  # ── Migrations ─────────────────────────────────────────────────────────────
+  # One-shot: alembic upgrade head before the app containers start. Runs on
+  # every deploy and is safe to repeat. If it fails, nothing else comes up.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    <<: *default-restart
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment: &backend-env
+      ENVIRONMENT: ${ENVIRONMENT:-prod}
+      DEBUG: ${DEBUG:-false}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-talyn}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-talyn}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      FRONTEND_URL: ${PUBLIC_WEB_URL}
+      PAYMENT_RETURN_URL: ${PAYMENT_RETURN_URL}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      PAYSTACK_WEBHOOK_SECRET: ${PAYSTACK_WEBHOOK_SECRET:-}
+      ALLOW_STUB_PAYMENTS: ${ALLOW_STUB_PAYMENTS:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-20}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-300}
+      S3_SERVER_SIDE_ENCRYPTION: ${S3_SERVER_SIDE_ENCRYPTION:-AES256}
+      MAX_THUMBNAIL_BYTES: ${MAX_THUMBNAIL_BYTES:-5242880}
+      MAX_VIDEO_BYTES: ${MAX_VIDEO_BYTES:-536870912}
+      MAX_RESOURCE_BYTES: ${MAX_RESOURCE_BYTES:-104857600}
+      MAX_PROFILE_IMAGE_BYTES: ${MAX_PROFILE_IMAGE_BYTES:-2097152}
+      ORPHAN_UPLOAD_TTL_HOURS: ${ORPHAN_UPLOAD_TTL_HOURS:-24}
+      # Empty CLAMAV_HOST leaves uploads unscanned (never recorded as clean).
+      CLAMAV_HOST: ${CLAMAV_HOST:-}
+      CLAMAV_PORT: ${CLAMAV_PORT:-3310}
+      UPLOAD_SCANNING_REQUIRED: ${UPLOAD_SCANNING_REQUIRED:-false}
+    networks:
+      - data
+      - edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+
+  # ── Backend API ────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    <<: *default-restart
+    environment: *backend-env
+    networks:
+      - data
+      - edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      # Not required: the backend accepts unscanned uploads when CLAMAV_HOST
+      # is empty, and UPLOAD_SCANNING_REQUIRED decides whether that is fatal.
+      # Listed so the scanner is up before the first real upload when it is
+      # configured.
+      clamav:
+        condition: service_started
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    # Scale with replicas, not workers:
+    #   docker compose up -d --scale backend=3
+    # Each replica is its own process with its own connection pool. Set
+    # REDIS_URL (done above) or each replica would enforce its own rate limit.
+
+  # ── AI coach ───────────────────────────────────────────────────────────────
+  coach:
+    build:
+      context: ../talyn-ai-coach  # sibling checkout, see header comment
+      dockerfile: Dockerfile
+    <<: *default-restart
+    environment:
+      TALYN_BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Leave unset for canned responses. In prod, an unset key means every
+      # learner gets a fake coach reply — set it.
+      TALYN_MOCK: ${TALYN_MOCK:-}
+      # Browsers allowed to call the coach. Unset means localhost only, not
+      # every origin — the coach bills a real API on every call.
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      # Require a backend JWT on every call. Defaults on whenever the coach is
+      # not in mock mode.
+      TALYN_REQUIRE_TOKEN: ${TALYN_REQUIRE_TOKEN:-}
+      COACH_RATE_LIMIT_PER_MINUTE: ${COACH_RATE_LIMIT_PER_MINUTE:-30}
+    networks:
+      - edge
+      # Only if a scanner is configured; harmless when CLAMAV_HOST is empty.
+      - data
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  # ── Backups ────────────────────────────────────────────────────────────────
+  # Manual:  docker compose run --rm backup
+  # Scheduled: see the cron entry in DEPLOYMENT.md, which calls this.
+  #
+  # Every run verifies by restoring into a scratch database and comparing row
+  # counts, then deletes the dump if that fails. A dump nobody has restored is
+  # a guess, and a script that only writes files will keep reporting success
+  # long after the dumps stop being restorable.
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    environment: *backend-env
+    volumes:
+      # Dumps land on the host, not in a container layer that vanishes.
+      - ${BACKUP_DIR:-./backups}:/backups
+    networks:
+      - data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - scripts.backup
+      - --dest
+      - /backups
+      - --keep
+      - ${BACKUP_KEEP:-7}
+      - --verify
+
+  # ── Malware scanner (optional) ─────────────────────────────────────────────
+  # Runs by default so `docker compose up` gives you a scanner to point
+  # CLAMAV_HOST at. Drop this service and leave CLAMAV_HOST empty to run
+  # without one: uploads are then recorded as "unscanned", never "clean".
+  clamav:
+    image: clamav/clamav:1.4
+    <<: *default-restart
+    # Signature updates are large and slow on first boot. Give it room and
+    # time before the backend starts scanning.
+    volumes:
+      - clamav-db:/var/lib/clamav
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 180s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # ── TLS edge ───────────────────────────────────────────────────────────────
+  # The only service that binds a host port. Caddy obtains and renews
+  # certificates over ACME; nothing else needs a cert or a public port.
+  # Routes straight to the services (there is no frontend container — see
+  # Caddyfile). The `web` service used to sit here; it was removed when the
+  # frontend stopped being deployed, not forgotten.
+  caddy:
+    image: caddy:2-alpine
+    <<: *default-restart
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      API_HOST: ${API_HOST:-api.your-domain.com}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    volumes:
+      # Certificate state must persist or Caddy re-requests on every deploy
+      # and hammers Let's Encrypt's rate limit.
+      - caddy-data:/data
+      - caddy-config:/config
+      # Read-only: the edge config is code, not runtime state.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - edge
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+networks:
+  # Browsable, has egress. Web-facing services and caddy live here.
+  edge:
+    driver: bridge
+  # No egress, no ingress from outside. Datastores live here so only the
+  # services that need them can reach them at all.
+  data:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+  clamav-db:
