@@ -4,6 +4,7 @@ SMTP is replaced at the smtplib boundary, so the tests exercise the real
 message building, the real logging, and the real DB writes with no network
 and no configured mail server.
 """
+import email
 from email import policy
 
 import pytest
