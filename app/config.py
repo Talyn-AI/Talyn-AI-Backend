@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # Shared counters for multi-worker deployments. Empty = in-memory.
     redis_url: str = ""
 
+    # Score needed to clear a quiz lesson and move on to the next lesson. One
+    # number rather than a per-quiz mark: a quiz is generated from a topic at
+    # request time, so there is nothing stored to hang an individual pass mark
+    # on, and a per-lesson threshold would be a setting nobody ever edits.
+    quiz_pass_percent: float = 60.0
+
     # S3-compatible object storage (videos, thumbnails, resources).
     # Empty s3_bucket = unconfigured (upload endpoints fail closed).
     s3_endpoint: str = ""

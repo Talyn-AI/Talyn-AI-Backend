@@ -9,6 +9,10 @@ class QuizSubmit(BaseModel):
     topic: str = Field(..., min_length=1, max_length=255)
     score_percent: float = Field(..., ge=0, le=100)
     attempts: int = Field(default=1, ge=1)
+    # Set this when the attempt came from a lesson in the course (lesson_type
+    # "quiz"). Without it the score is recorded but clears nothing, which is
+    # the right behaviour for a standalone practice quiz.
+    lesson_id: int | None = None
 
 
 class LessonCompleteRequest(BaseModel):

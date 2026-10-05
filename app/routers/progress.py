@@ -3,9 +3,10 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.deps import get_current_user, require_onboarding
 from app.database import get_db
 from app.models import (
@@ -125,11 +126,21 @@ def complete_lesson(
         progress.attempts += 1
 
     if not already_done:
+        # Gate only a first completion. Re-completing a lesson someone already
+        # finished must never start failing because a quiz was inserted ahead
+        # of it after the fact.
+        _require_quiz_unlocked(db, current_user, lesson)
         award_xp(db, current_user, "lesson", note=f"Completed lesson: {lesson.title}")
         track(db, LESSON_COMPLETED, current_user, course_id=lesson.course_id,
               lesson_id=lesson.id)
     else:
-        return {"completed": True, "lesson_id": lesson_id, "xp_awarded": 0, "already_completed": True}
+        return {
+            "completed": True,
+            "lesson_id": lesson_id,
+            "xp_awarded": 0,
+            "already_completed": True,
+            "next": _next_step_payload(db, lesson),
+        }
 
     # Flush so the new progress row is visible to the course-progress count
     # below (sessions run with autoflush off).
@@ -142,6 +153,7 @@ def complete_lesson(
         "lesson_id": lesson_id,
         "xp_awarded": XP_AMOUNTS["lesson"],
         "already_completed": False,
+        "next": _next_step_payload(db, lesson),
     }
 
 
@@ -153,10 +165,16 @@ def submit_quiz(
     current_user: User = Depends(require_onboarding),
     db: Session = Depends(get_db),
 ) -> QuizSubmit:
-    """Record a quiz attempt and award quiz XP."""
+    """Record a quiz attempt and award quiz XP.
+
+    `lesson_id` is what makes the attempt count toward clearing a quiz lesson.
+    Omit it for a standalone practice run: the score is still recorded and still
+    earns XP, it just does not unlock the next lesson.
+    """
     result = QuizResult(
         user_id=current_user.id,
         course_id=payload.course_id,
+        lesson_id=payload.lesson_id,
         topic=payload.topic,
         score_percent=payload.score_percent,
         attempts=payload.attempts,
@@ -309,6 +327,131 @@ def _maybe_complete_enrollment(db: Session, user: User, course_id: int) -> None:
             track(db, COURSE_COMPLETED, user, course_id=course_id)
 
 
+# ── Quiz gating ──────────────────────────────────────────────────────────────
+#
+# A quiz is an ordinary lesson with lesson_type "quiz", so "the quiz after this
+# lesson" is just "the next lesson in the course, if it happens to be a quiz".
+# Both halves of that — pointing at it, and holding the learner there — live
+# here so the rule exists in one place.
+
+
+def _position_after(lesson: Lesson):
+    """Ordering predicate for lessons strictly after `lesson`.
+
+    Compares (order, id) rather than order alone: two lessons can legitimately
+    share an order in a course built through the API, and comparing on order
+    alone would make the same lesson both the previous and the next one.
+    """
+    return or_(
+        Lesson.order > lesson.order,
+        and_(Lesson.order == lesson.order, Lesson.id > lesson.id),
+    )
+
+
+def _position_before(lesson: Lesson):
+    return or_(
+        Lesson.order < lesson.order,
+        and_(Lesson.order == lesson.order, Lesson.id < lesson.id),
+    )
+
+
+def _next_lesson(db: Session, lesson: Lesson) -> Lesson | None:
+    """The published lesson that follows `lesson` in its course, if any."""
+    return db.scalar(
+        select(Lesson)
+        .where(
+            Lesson.course_id == lesson.course_id,
+            Lesson.is_published.is_(True),
+            _position_after(lesson),
+        )
+        .order_by(Lesson.order, Lesson.id)
+        .limit(1)
+    )
+
+
+def _passed_quiz_lesson_ids(db: Session, user: User) -> set[int]:
+    """Lesson ids of quiz lessons this learner has already cleared.
+
+    The `lesson_id IS NOT NULL` filter is load-bearing, not tidiness. Results
+    written before quiz results carried a lesson have NULL there, and
+    `NOT IN (subquery containing NULL)` evaluates to NULL for every row — the
+    gate would then treat every learner as having passed every quiz.
+    """
+    rows = db.scalars(
+        select(QuizResult.lesson_id).where(
+            QuizResult.user_id == user.id,
+            QuizResult.lesson_id.is_not(None),
+            QuizResult.score_percent >= settings.quiz_pass_percent,
+        )
+    ).all()
+    return {r for r in rows if r is not None}
+
+
+def _blocking_quiz(db: Session, user: User, lesson: Lesson) -> Lesson | None:
+    """The nearest earlier quiz lesson standing between the learner and `lesson`."""
+    passed = _passed_quiz_lesson_ids(db, user)
+    candidates = db.scalars(
+        select(Lesson)
+        .where(
+            Lesson.course_id == lesson.course_id,
+            Lesson.lesson_type == "quiz",
+            Lesson.is_published.is_(True),
+            _position_before(lesson),
+        )
+        .order_by(Lesson.order.desc(), Lesson.id.desc())
+    ).all()
+    for candidate in candidates:
+        if candidate.id not in passed:
+            return candidate
+    return None
+
+
+def _require_quiz_unlocked(db: Session, user: User, lesson: Lesson) -> None:
+    """Block a lesson until every earlier quiz lesson has been passed.
+
+    Skipped for the course's own creator, who is previewing their material
+    rather than being held to it.
+    """
+    from app.core.deps import can_manage_course
+
+    course = db.get(Course, lesson.course_id)
+    if course is not None and can_manage_course(course, user):
+        return
+
+    blocking = _blocking_quiz(db, user, lesson)
+    if blocking is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Pass \"{blocking.title}\" before continuing — "
+                f"you need {settings.quiz_pass_percent:.0f}% to move on"
+            ),
+        )
+
+
+def _next_step_payload(db: Session, lesson: Lesson) -> dict:
+    """What the client should show next once this lesson is done.
+
+    Returned rather than left to the client for the same reason onboarding
+    returns `next_step`: two implementations disagreeing about whether a quiz
+    follows a lesson is exactly the bug this prevents.
+    """
+    nxt = _next_lesson(db, lesson)
+    if nxt is None:
+        return {"type": "course_complete", "lesson_id": None, "title": None}
+    is_quiz = nxt.lesson_type == "quiz"
+    return {
+        "type": "quiz" if is_quiz else "lesson",
+        "lesson_id": nxt.id,
+        "title": nxt.title,
+        "topic": nxt.topic,
+        # Spelled out rather than left to the client to infer from `type`, so
+        # "offer it" and "gate on it" stay the same decision.
+        "quiz_required": is_quiz,
+    }
+
+
+
 @router.post("/lessons/{lesson_id}/start")
 def start_lesson(
     lesson_id: int,
@@ -320,6 +463,7 @@ def start_lesson(
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
     _require_progress_access(db, current_user, lesson)
+    _require_quiz_unlocked(db, current_user, lesson)
 
     progress = db.scalar(
         select(LessonProgress).where(

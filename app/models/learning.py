@@ -15,6 +15,11 @@ class QuizResult(Base):
     course_id: Mapped[int | None] = mapped_column(
         ForeignKey("courses.id"), nullable=True, index=True
     )
+    # Which quiz this was. Nullable for attempts that predate the link; the
+    # quiz gate only credits results that carry one.
+    lesson_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lessons.id"), nullable=True, index=True
+    )
     topic: Mapped[str] = mapped_column(String(255))
     score_percent: Mapped[float] = mapped_column(Float)
     attempts: Mapped[int] = mapped_column(Integer, default=1)
