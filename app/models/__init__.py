@@ -21,6 +21,7 @@ from app.models.asset import LessonAsset
 from app.models.payment import Payment
 from app.models.analytics import AnalyticsEvent
 from app.models.social import CommunityPost, CommunityReply, DirectMessage, LiveSession
+from app.models.waitlist import WaitlistSignup
 
 __all__ = [
     "User",
@@ -51,4 +52,5 @@ __all__ = [
     "CommunityReply",
     "DirectMessage",
     "LiveSession",
+    "WaitlistSignup",
 ]

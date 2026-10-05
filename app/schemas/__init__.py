@@ -54,6 +54,11 @@ from app.schemas.onboarding import (
     VerificationConfirmIn,
     VerificationRequestIn,
 )
+from app.schemas.waitlist import (
+    WaitlistJoined,
+    WaitlistRole,
+    WaitlistSignupIn,
+)
 from app.schemas.mission import (
     MISSION_STATUSES,
     BUDDY_MATCH_STATUSES,
@@ -154,6 +159,9 @@ __all__ = [
     "PaceOptionOut",
     "VerificationConfirmIn",
     "VerificationRequestIn",
+    "WaitlistJoined",
+    "WaitlistRole",
+    "WaitlistSignupIn",
     "MissionAdopt",
     "MissionCatalogRead",
     "MissionRead",

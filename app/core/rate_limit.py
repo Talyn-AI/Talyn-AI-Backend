@@ -2,7 +2,8 @@
 
 Buckets:
   - "auth": credential-sensitive endpoints (login, register, refresh,
-    password reset) — tight limit against brute force.
+    password reset) plus the unauthenticated waitlist signup — a tight
+    limit against brute force, and against a bot filling a public form.
   - "default": everything else.
 
 Keyed by (bucket, client IP), 60-second windows. Returns 429 + Retry-After
@@ -25,6 +26,9 @@ AUTH_PATH_FRAGMENTS = (
     "/auth/register",
     "/auth/refresh",
     "/auth/password-reset",
+    # Not credential-sensitive, but public and unauthenticated: it needs the
+    # same protection against being filled by a script.
+    "/waitlist",
 )
 
 __all__ = ["RateLimitMiddleware", "reset_rate_limit_store"]

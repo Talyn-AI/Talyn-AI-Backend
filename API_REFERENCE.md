@@ -71,7 +71,7 @@ button can be hidden before either is ever hit.
 
 ---
 
-108 endpoints across 17 areas.
+109 endpoints across 18 areas.
 
 ## Admin
 
@@ -2419,6 +2419,10 @@ object
 
 Record a quiz attempt and award quiz XP.
 
+`lesson_id` is what makes the attempt count toward clearing a quiz lesson.
+Omit it for a standalone practice run: the score is still recorded and still
+earns XP, it just does not unlock the next lesson.
+
 **Request body**
 
 | Field | Type | Required | Notes |
@@ -2427,6 +2431,7 @@ Record a quiz attempt and award quiz XP.
 | `topic` | string | yes | — |
 | `score_percent` | number | yes | — |
 | `attempts` | integer | no | default `1` |
+| `lesson_id` | integer *(nullable)* | no | — |
 
 
 **Responses**
@@ -2439,6 +2444,7 @@ Record a quiz attempt and award quiz XP.
 | `topic` | string | yes | — |
 | `score_percent` | number | yes | — |
 | `attempts` | integer | no | default `1` |
+| `lesson_id` | integer *(nullable)* | no | — |
 
 - **422** Validation Error
 
@@ -2796,6 +2802,49 @@ Change the learner's password (requires the current one).
 **200**
 
 object
+
+- **422** Validation Error
+
+
+## Waitlist
+
+| | Method | Path | Auth | Wired |
+|---|---|---|---|---|
+| | `POST` | `/v1/waitlist` | — public | — |
+
+### POST /v1/waitlist
+
+Add someone to the early-access waitlist. No auth — they have no account.
+
+Repeat submissions update the existing row rather than creating a second
+one, so someone who fixes a typo and resubmits is not counted twice. The
+status code is the only thing that differs: 201 the first time, 200 after.
+
+Deliberately does not send a confirmation email. Mail is only configured
+for one address, so every other signup would see a bounce and conclude the
+form is broken — a worse outcome than no mail at all.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string (email) | yes | — |
+| `name` | string | yes | — |
+| `role` | string (one of `learner`, `creator`) | yes | — |
+| `interests` | array of string | no | — |
+| `course` | string | no | default `` |
+
+
+**Responses**
+
+**201**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `message` | string | yes | — |
+| `email` | string | yes | — |
+| `position` | integer | yes | — |
+| `created` | boolean | yes | — |
 
 - **422** Validation Error
 
