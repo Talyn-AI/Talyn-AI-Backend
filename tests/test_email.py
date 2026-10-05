@@ -240,7 +240,7 @@ def test_reset_link_points_at_a_real_frontend_route(client, smtp, monkeypatch):
     _register(client, "route@example.com")
     client.post("/v1/auth/password-reset/request", json={"email": "route@example.com"})
     link = _reset_link(_reset_mail(smtp))
-    assert link.startswith("https://app.talyn.dev/reset-password?token=")
+    assert link.startswith("https://app.talyn.dev/password-reset?token=")
 
 
 def test_reset_works_end_to_end(client, smtp):
@@ -439,7 +439,7 @@ import re as _re
 
 def _reset_link(message) -> str:
     body = _last_text(message)
-    match = _re.search(r"https?://\S*reset-password\?token=\S+", body)
+    match = _re.search(r"https?://\S*password-reset\?token=\S+", body)
     assert match, f"no reset link in: {body[:300]}"
     return match.group(0)
 

@@ -190,7 +190,9 @@ def request_password_reset(
         return {"message": RESET_REQUEST_MESSAGE}
 
     raw, _row = reset_tokens.issue(db, user)
-    reset_link = f"{config_module.settings.frontend_url}/reset-password?token={raw}"
+    # Path matches the deployed frontend's route. It was /reset-password, which
+    # that app has never had — every reset link was a 404.
+    reset_link = f"{config_module.settings.frontend_url}/password-reset?token={raw}"
 
     if email_service.is_configured():
         try:

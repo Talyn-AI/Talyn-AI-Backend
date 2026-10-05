@@ -104,8 +104,8 @@ def test_reset_sends_email_not_token(client, auth_headers, smtp_settings, fake_s
     assert len(resets) == 1
     body = _plain_text(resets[0])
     assert resets[0]["To"] == "kwame@example.com"
-    assert "reset-password?token=" in body
-    assert "https://app.example.com/reset-password?token=" in body
+    assert "password-reset?token=" in body
+    assert "https://app.example.com/password-reset?token=" in body
 
 
 def test_reset_email_failure_is_502(client, auth_headers, smtp_settings, monkeypatch):
