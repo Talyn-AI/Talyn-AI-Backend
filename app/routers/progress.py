@@ -29,7 +29,9 @@ from app.schemas import (
     ConversationRead,
     EnrollmentProgress,
     LearnerContextOut,
+    LessonCompleteOut,
     LessonCompleteRequest,
+    LessonStartOut,
     QuizSubmit,
     StudyPlanIn,
     StudyPlanRead,
@@ -94,14 +96,33 @@ def enroll(
 
 # ── Lesson completion ────────────────────────────────────────────────────────
 
-@router.post("/lessons/{lesson_id}/complete")
+@router.post(
+    "/lessons/{lesson_id}/complete",
+    response_model=LessonCompleteOut,
+    responses={
+        409: {
+            "description": (
+                "Blocked by an unpassed earlier quiz lesson. The detail names "
+                "the quiz to pass — submit a passing score with its lesson_id "
+                "via POST /v1/me/quiz-results first."
+            )
+        }
+    },
+)
 def complete_lesson(
     lesson_id: int,
     payload: LessonCompleteRequest = LessonCompleteRequest(),
     current_user: User = Depends(require_onboarding),
     db: Session = Depends(get_db),
-) -> dict:
-    """Mark a lesson complete; awards lesson XP (once per lesson)."""
+) -> LessonCompleteOut:
+    """Mark a lesson complete; awards lesson XP (once per lesson).
+
+    The response carries a `next` block naming the following lesson and whether
+    it is a quiz — route the learner off that rather than deciding client-side.
+    A first completion 409s while an earlier quiz lesson is unpassed (the
+    detail names the quiz); re-completing an already-finished lesson never
+    gates, so history stays reachable.
+    """
     lesson = db.get(Lesson, lesson_id)
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
@@ -438,7 +459,7 @@ def _next_step_payload(db: Session, lesson: Lesson) -> dict:
     """
     nxt = _next_lesson(db, lesson)
     if nxt is None:
-        return {"type": "course_complete", "lesson_id": None, "title": None}
+        return {"type": "course_complete", "lesson_id": None, "title": None, "topic": None}
     is_quiz = nxt.lesson_type == "quiz"
     return {
         "type": "quiz" if is_quiz else "lesson",
@@ -452,13 +473,28 @@ def _next_step_payload(db: Session, lesson: Lesson) -> dict:
 
 
 
-@router.post("/lessons/{lesson_id}/start")
+@router.post(
+    "/lessons/{lesson_id}/start",
+    response_model=LessonStartOut,
+    responses={
+        409: {
+            "description": (
+                "Blocked by an unpassed earlier quiz lesson. The detail names "
+                "the quiz to pass."
+            )
+        }
+    },
+)
 def start_lesson(
     lesson_id: int,
     current_user: User = Depends(require_onboarding),
     db: Session = Depends(get_db),
-) -> dict:
-    """Record that the learner started a lesson (idempotent, no XP)."""
+) -> LessonStartOut:
+    """Record that the learner started a lesson (idempotent, no XP).
+
+    409s exactly like completing it does: starting the lesson after an
+    unpassed quiz is refused, so skipping `start` cannot skip the gate.
+    """
     lesson = db.get(Lesson, lesson_id)
     if lesson is None:
         raise HTTPException(status_code=404, detail="Lesson not found")

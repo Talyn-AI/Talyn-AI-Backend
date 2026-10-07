@@ -129,7 +129,8 @@ def test_completing_the_final_lesson_reports_the_course_complete(
                     headers=enrolled)
     assert r.status_code == 200, r.text
     assert r.json()["next"] == {
-        "type": "course_complete", "lesson_id": None, "title": None
+        "type": "course_complete", "lesson_id": None, "title": None, "topic": None,
+        "quiz_required": False,
     }
 
 

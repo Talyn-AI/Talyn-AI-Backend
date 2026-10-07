@@ -209,7 +209,20 @@ def _shape(spec, schema):
 def _render_payload(spec, schema):
     prefix, fields, scalar = _shape(spec, schema)
     if fields:
-        return (f"{prefix}\n\n" if prefix else "") + _table(spec, fields)
+        out = (f"{prefix}\n\n" if prefix else "") + _table(spec, fields)
+        # One level of nesting, mirroring _body_section: this is where the
+        # interesting shapes (e.g. the `next` block on lesson completion) live,
+        # and a bare model name would leave the reader guessing.
+        for name, node, _req in fields:
+            target = node
+            if target.get("type") == "array":
+                target = target.get("items", {})
+            nested = _props(spec, target) if isinstance(target, dict) else []
+            if nested:
+                out += f"\n<details><summary><code>{name}</code> object</summary>\n\n"
+                out += _table(spec, nested)
+                out += "\n</details>\n"
+        return out
     return f"{prefix + ' ' if prefix else ''}{scalar}\n" if (prefix or scalar) else "_empty_\n"
 
 

@@ -600,6 +600,18 @@ One post with its replies (public).
 | `reply_count` | integer | no | default `0` |
 | `replies` | array of Reply | no | default `[]` |
 
+<details><summary><code>replies</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `author_user_id` | integer | yes | — |
+| `author_name` | string | no | default `` |
+| `body` | string | yes | — |
+| `created_at` | string (date-time) | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -736,6 +748,34 @@ Create a draft course, optionally with its lessons. Creator or admin.
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
 
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -777,6 +817,34 @@ Get a course with its lessons. Drafts visible to owner/admin only.
 | `status` | string | no | default `draft` |
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
+
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
 
 - **422** Validation Error
 
@@ -823,6 +891,34 @@ Edit a course. Owner or admin (status changes go through publish flow).
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
 
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -842,6 +938,31 @@ Lesson funnel + quiz aggregates for a course. Owner or admin.
 | `total_views` | integer | yes | — |
 | `total_enrollments` | integer | yes | — |
 | `total_completions` | integer | yes | — |
+
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `lesson_id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `views` | integer | yes | — |
+| `starts` | integer | yes | — |
+| `completions` | integer | yes | — |
+| `completion_rate` | number | yes | — |
+
+</details>
+
+<details><summary><code>quiz_topics</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `topic` | string | yes | — |
+| `attempts` | integer | yes | — |
+| `avg_score` | number | yes | — |
+| `best_score` | number | yes | — |
+
+</details>
 
 - **422** Validation Error
 
@@ -904,6 +1025,17 @@ array of objects
 | `published` | boolean | yes | — |
 | `steps` | array of MissionTemplateStep | no | default `[]` |
 
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+
+</details>
+
 
 ### POST /v1/creator/missions
 
@@ -946,6 +1078,17 @@ Create a mission template. Starts unpublished — set `published` to list it.
 | `published` | boolean | yes | — |
 | `steps` | array of MissionTemplateStep | no | default `[]` |
 
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -983,6 +1126,17 @@ One of the creator's own templates.
 | `badge` | string *(nullable)* | yes | — |
 | `published` | boolean | yes | — |
 | `steps` | array of MissionTemplateStep | no | default `[]` |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+
+</details>
 
 - **422** Validation Error
 
@@ -1022,6 +1176,17 @@ tomorrow. Only later adopters see the new text.
 | `badge` | string *(nullable)* | yes | — |
 | `published` | boolean | yes | — |
 | `steps` | array of MissionTemplateStep | no | default `[]` |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+
+</details>
 
 - **422** Validation Error
 
@@ -1107,6 +1272,18 @@ Daily enrollments/purchases/revenue/completions across own courses.
 | `active_learners` | integer | yes | — |
 | `daily` | array of DailyPoint | yes | — |
 
+<details><summary><code>daily</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `date` | string | yes | — |
+| `enrollments` | integer | yes | — |
+| `purchases` | integer | yes | — |
+| `revenue_naira` | integer | yes | — |
+| `completions` | integer | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -1137,6 +1314,17 @@ Creator stats: courses, learners, revenue, recent activity.
 | `total_learners` | integer | yes | — |
 | `total_revenue_naira` | integer | no | default `0` |
 | `recent_activity` | array of ActivityEntry | no | default `[]` |
+
+<details><summary><code>recent_activity</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `event` | string | yes | — |
+| `course_id` | integer *(nullable)* | no | — |
+| `lesson_id` | integer *(nullable)* | no | — |
+| `created_at` | string (date-time) | yes | — |
+
+</details>
 
 
 ### GET /v1/me/creator/profile
@@ -1232,6 +1420,34 @@ Archive a course (hidden from discovery, kept for records).
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
 
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -1316,6 +1532,23 @@ Append a module to the end of the course curriculum.
 | `order` | integer | yes | — |
 | `lessons` | array of Lesson | no | default `[]` |
 
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -1374,6 +1607,23 @@ Rename a module.
 | `order` | integer | yes | — |
 | `lessons` | array of Lesson | no | default `[]` |
 
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -1402,6 +1652,34 @@ Student-view preview of a course (works on drafts; editing resumes after).
 | `status` | string | no | default `draft` |
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
+
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
 
 - **422** Validation Error
 
@@ -1433,6 +1711,34 @@ Publish a course after validation; invalid courses get 422 + errors.
 | `status` | string | no | default `draft` |
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
+
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
 
 - **422** Validation Error
 
@@ -1480,6 +1786,34 @@ Return a course to draft (hides it from discovery).
 | `status` | string | no | default `draft` |
 | `lessons` | array of Lesson | no | default `[]` |
 | `modules` | array of Module | no | default `[]` |
+
+<details><summary><code>lessons</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `order` | integer | yes | — |
+| `module_id` | integer *(nullable)* | no | — |
+| `title` | string | yes | — |
+| `topic` | string | yes | — |
+| `description` | string | no | default `` |
+| `lesson_type` | string | yes | — |
+| `estimated_minutes` | integer | yes | — |
+| `content` | string *(nullable)* | no | — |
+| `is_published` | boolean | yes | — |
+
+</details>
+
+<details><summary><code>modules</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `order` | integer | yes | — |
+| `lessons` | array of Lesson | no | default `[]` |
+
+</details>
 
 - **422** Validation Error
 
@@ -1938,6 +2272,18 @@ array of objects
 | `template_id` | integer *(nullable)* | no | — |
 | `steps` | array of MissionStep | no | default `[]` |
 
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+| `completed` | boolean | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -1977,6 +2323,18 @@ mission N first" a useful nudge rather than an obstacle.
 | `template_id` | integer *(nullable)* | no | — |
 | `steps` | array of MissionStep | no | default `[]` |
 
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+| `completed` | boolean | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -2012,6 +2370,18 @@ Get one of the learner's missions with its steps.
 | `status` | string | yes | — |
 | `template_id` | integer *(nullable)* | no | — |
 | `steps` | array of MissionStep | no | default `[]` |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+| `completed` | boolean | yes | — |
+
+</details>
 
 - **422** Validation Error
 
@@ -2079,6 +2449,17 @@ array of objects
 | `adopted` | boolean | no | default `False` |
 | `adopted_mission_id` | integer *(nullable)* | no | — |
 
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | yes | — |
+| `order` | integer | yes | — |
+
+</details>
+
 - **422** Validation Error
 
 
@@ -2141,6 +2522,28 @@ copy will eventually offer something the API rejects.
 | `paces` | array of PaceOption | yes | — |
 | `interests` | array of terestOption | yes | — |
 | `default_pace` | string | yes | — |
+
+<details><summary><code>paces</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `key` | string | yes | — |
+| `label` | string | yes | — |
+| `min_minutes` | integer | yes | — |
+| `max_minutes` | integer *(nullable)* | yes | — |
+| `daily_goal_minutes` | integer | yes | — |
+| `description` | string | yes | — |
+
+</details>
+
+<details><summary><code>interests</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `key` | string | yes | — |
+| `label` | string | yes | — |
+
+</details>
 
 
 ### GET /v1/onboarding/status
@@ -2260,6 +2663,28 @@ Assemble the LearnerContext object the AI coach expects, from real DB data.
 | `study_plan` | object *(nullable)* | no | — |
 | `conversation_history` | array of object | no | default `[]` |
 
+<details><summary><code>quiz_performance</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `topic` | string | yes | — |
+| `score_percent` | number | yes | — |
+| `attempts` | integer | yes | — |
+| `last_attempt_date` | string | yes | — |
+
+</details>
+
+<details><summary><code>xp_breakdown</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `activity` | string | yes | — |
+| `amount` | integer | yes | — |
+| `note` | string *(nullable)* | no | — |
+| `earned_date` | string (date-time) | yes | — |
+
+</details>
+
 
 ### DELETE /v1/me/conversation
 
@@ -2361,6 +2786,12 @@ array of objects
 
 Mark a lesson complete; awards lesson XP (once per lesson).
 
+The response carries a `next` block naming the following lesson and whether
+it is a quiz — route the learner off that rather than deciding client-side.
+A first completion 409s while an earlier quiz lesson is unpassed (the
+detail names the quiz); re-completing an already-finished lesson never
+gates, so history stays reachable.
+
 **Request body**
 
 | Field | Type | Required | Notes |
@@ -2373,7 +2804,27 @@ Mark a lesson complete; awards lesson XP (once per lesson).
 
 **200**
 
-object
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `completed` | boolean | yes | — |
+| `lesson_id` | integer | yes | — |
+| `xp_awarded` | integer | yes | — |
+| `already_completed` | boolean | yes | — |
+| `next` | NextStep | yes | — |
+
+<details><summary><code>next</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `type` | string (one of `quiz`, `lesson`, `course_complete`) | yes | — |
+| `lesson_id` | integer *(nullable)* | no | — |
+| `title` | string *(nullable)* | no | — |
+| `topic` | string *(nullable)* | no | — |
+| `quiz_required` | boolean | no | default `False` |
+
+</details>
+
+- **409** Blocked by an unpassed earlier quiz lesson. The detail names the quiz to pass — submit a passing score with its lesson_id via POST /v1/me/quiz-results first.
 
 - **422** Validation Error
 
@@ -2382,13 +2833,22 @@ object
 
 Record that the learner started a lesson (idempotent, no XP).
 
+409s exactly like completing it does: starting the lesson after an
+unpassed quiz is refused, so skipping `start` cannot skip the gate.
+
 **Request body:** none
 
 **Responses**
 
 **200**
 
-object
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `started` | boolean | yes | — |
+| `lesson_id` | integer | yes | — |
+| `first_time` | boolean | yes | — |
+
+- **409** Blocked by an unpassed earlier quiz lesson. The detail names the quiz to pass.
 
 - **422** Validation Error
 
@@ -2536,6 +2996,17 @@ The learner's XP totals, level, and recent breakdown.
 | `next_level_title` | string | yes | — |
 | `breakdown` | array of XpEntry | yes | — |
 
+<details><summary><code>breakdown</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `activity` | string | yes | — |
+| `amount` | integer | yes | — |
+| `note` | string *(nullable)* | no | — |
+| `earned_date` | string (date-time) | yes | — |
+
+</details>
+
 
 ### POST /v1/me/xp/award
 
@@ -2616,6 +3087,21 @@ content is unlocked yet. Unconfigured (dev/tests) settles immediately.
 | `payment` | Payment | yes | — |
 | `checkout_url` | string *(nullable)* | no | — |
 | `enrolled` | boolean | yes | — |
+
+<details><summary><code>payment</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `course_id` | integer | yes | — |
+| `amount_naira` | integer | yes | — |
+| `currency` | string | yes | — |
+| `status` | string | yes | — |
+| `provider` | string | yes | — |
+| `reference` | string | yes | — |
+| `created_at` | string (date-time) | yes | — |
+
+</details>
 
 - **422** Validation Error
 

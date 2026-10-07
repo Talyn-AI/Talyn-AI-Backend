@@ -1,5 +1,6 @@
 """Progress, quiz, XP, and learner-context schemas."""
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,34 @@ class LessonCompleteRequest(BaseModel):
     contract can grow (e.g. time spent, difficulty rating)."""
 
     pass
+
+
+class NextStepOut(BaseModel):
+    """What the client should show after a lesson is done.
+
+    `"quiz"` also means "required": the gate refuses the lesson after it
+    until this quiz is passed, so `type` and `quiz_required` always agree.
+    """
+
+    type: Literal["quiz", "lesson", "course_complete"]
+    lesson_id: int | None = None
+    title: str | None = None
+    topic: str | None = None
+    quiz_required: bool = False
+
+
+class LessonCompleteOut(BaseModel):
+    completed: bool
+    lesson_id: int
+    xp_awarded: int
+    already_completed: bool
+    next: NextStepOut
+
+
+class LessonStartOut(BaseModel):
+    started: bool
+    lesson_id: int
+    first_time: bool
 
 
 class XpEntry(BaseModel):
