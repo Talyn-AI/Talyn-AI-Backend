@@ -71,7 +71,7 @@ button can be hidden before either is ever hit.
 
 ---
 
-118 endpoints across 20 areas.
+124 endpoints across 20 areas.
 
 ## Admin
 
@@ -2167,6 +2167,12 @@ Rename, re-describe, or replace the course list wholesale.
 | | `POST` | `/v1/me/materials` | 🔒 user | — |
 | | `POST` | `/v1/me/materials/presigned` | 🔒 user | — |
 | | `DELETE` | `/v1/me/materials/{material_id}` | 🔒 user | — |
+| | `POST` | `/v1/me/materials/{material_id}/analyze` | 🔒 user | — |
+| | `POST` | `/v1/me/materials/{material_id}/days/{day_number}/complete` | 🔒 user | — |
+| | `GET` | `/v1/me/materials/{material_id}/payment` | 🔒 user | — |
+| | `POST` | `/v1/me/materials/{material_id}/purchase` | 🔒 user | — |
+| | `GET` | `/v1/me/materials/{material_id}/schedule` | 🔒 user | — |
+| | `POST` | `/v1/me/materials/{material_id}/verify` | 🔒 user | — |
 
 ### GET /v1/me/materials
 
@@ -2267,6 +2273,150 @@ orphan sweep collects the unreferenced key within a day.
 **200**
 
 object
+
+- **422** Validation Error
+
+
+### POST /v1/me/materials/{material_id}/analyze
+
+Read the document and preview what it contains: topics, objectives,
+study time. Free — this is the "here's what we found" screen, and the
+paywall comes after it, not before it.
+
+Repeatable: a fresh analysis replaces the previous one.
+
+**Request body:** none
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `topics` | array of string | no | default `[]` |
+| `objectives` | array of string | no | default `[]` |
+| `estimated_minutes` | integer | no | default `0` |
+| `summary` | string | no | default `` |
+
+- **422** Validation Error
+
+
+### POST /v1/me/materials/{material_id}/days/{day_number}/complete
+
+Mark one day done. Idempotent: re-completing is a no-op, not an error.
+
+**Request body:** none
+
+**Responses**
+
+**200**
+
+object
+
+- **422** Validation Error
+
+
+### GET /v1/me/materials/{material_id}/payment
+
+Current state of the unlock payment. The callback page polls this.
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reference` | string | yes | — |
+| `status` | string | yes | — |
+| `unlocked` | boolean | yes | — |
+| `amount_naira` | integer | yes | — |
+
+- **422** Validation Error
+
+
+### POST /v1/me/materials/{material_id}/purchase
+
+Begin unlocking the 14-day schedule for a material.
+
+Analysis comes first (409 otherwise): the paywall follows the preview by
+design, and generation needs the analysis row anyway. Mirrors the course
+purchase flow otherwise — pending payment plus checkout URL on Paystack,
+inline settlement on the stub.
+
+**Request body:** none
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reference` | string | yes | — |
+| `checkout_url` | string *(nullable)* | no | — |
+| `unlocked` | boolean | no | default `False` |
+| `amount_naira` | integer | yes | — |
+
+- **422** Validation Error
+
+
+### GET /v1/me/materials/{material_id}/schedule
+
+The unlocked plan, generating it on first read after payment.
+
+402 until paid: the schedule is the product, and reads stay honest
+about that. Permanent once unlocked — the 14 days shape the plan,
+never gate it, so no expiry is checked here.
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `material_id` | integer | yes | — |
+| `title` | string | no | default `` |
+| `days` | array of ScheduleDay | no | default `[]` |
+| `days_total` | integer | no | default `0` |
+| `days_completed` | integer | no | default `0` |
+| `completion_percent` | number | no | default `0.0` |
+| `created_at` | string (date-time) *(nullable)* | no | — |
+
+<details><summary><code>days</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `day` | integer | yes | — |
+| `title` | string | no | default `` |
+| `objectives` | array of string | no | default `[]` |
+| `tasks` | array of string | no | default `[]` |
+| `completed` | boolean | no | default `False` |
+| `completed_at` | string (date-time) *(nullable)* | no | — |
+
+</details>
+
+- **422** Validation Error
+
+
+### POST /v1/me/materials/{material_id}/verify
+
+Ask Paystack whether this unlock actually completed.
+
+The reference from the URL is a hint only — the provider is the
+authority, and the payment must belong to the signed-in learner.
+
+**Request body:** none
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `reference` | string | yes | — |
+| `status` | string | yes | — |
+| `unlocked` | boolean | yes | — |
+| `amount_naira` | integer | yes | — |
 
 - **422** Validation Error
 

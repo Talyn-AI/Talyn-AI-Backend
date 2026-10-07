@@ -94,6 +94,13 @@ from app.schemas.learning_path import (
     PathStepRead,
     PathUpdateIn,
 )
+from app.schemas.study_schedule import (
+    AnalysisRead,
+    PathCheckout,
+    PathPaymentStatus,
+    ScheduleDayRead,
+    ScheduleRead,
+)
 from app.schemas.asset import (
     AssetIn,
     AssetRead,
@@ -208,6 +215,11 @@ __all__ = [
     "PathRead",
     "PathStepRead",
     "PathUpdateIn",
+    "AnalysisRead",
+    "PathCheckout",
+    "PathPaymentStatus",
+    "ScheduleDayRead",
+    "ScheduleRead",
     "AssetIn",
     "AssetRead",
     "MaterialClaimIn",

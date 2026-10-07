@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # the bucket 100 MB at a time; R2 is cheap per gigabyte but unbounded is
     # unbounded. Study documents are small, so 1 GB is generous.
     max_learner_library_bytes: int = 1024 * 1024 * 1024
+    # Price of unlocking a generated study schedule from a library document,
+    # in naira. One payment buys permanent access to that schedule — the
+    # 14 days shape the plan, never gate it.
+    material_path_price_naira: int = 2500
+    # Base URL of the AI coach service. Empty = document analysis and
+    # schedule generation are unavailable (endpoints fail closed).
+    coach_base_url: str = ""
 
     # How long an uploaded-but-never-attached object survives before the
     # orphan sweep deletes it. Without this, every abandoned presign leaks
@@ -152,12 +159,20 @@ class Settings(BaseSettings):
         """Base URL Paystack redirects the learner back to after checkout."""
         return (self.payment_return_url or self.frontend_url).rstrip("/")
 
-    def payment_callback_url(self, course_id: int) -> str:
+    def payment_callback_url(
+        self, course_id: int | None = None, material_id: int | None = None
+    ) -> str:
         """Where Paystack sends the learner once they finish (or abandon) paying.
 
         The frontend reads ?reference= off this URL and confirms the payment
-        against our API before unlocking anything.
+        against our API before unlocking anything. Exactly one of course_id
+        and material_id identifies what was being bought.
         """
+        if material_id is not None:
+            return (
+                f"{self.payments_origin}/checkout/callback"
+                f"?material_id={int(material_id)}"
+            )
         return (
             f"{self.payments_origin}/checkout/callback"
             f"?course_id={int(course_id)}"

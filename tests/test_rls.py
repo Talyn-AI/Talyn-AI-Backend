@@ -12,11 +12,24 @@ from sqlalchemy import text
 
 
 def _migration_tables():
-    path = "alembic/versions/d4c9a1e27f50_row_level_security.py"
-    spec = importlib.util.spec_from_file_location("rls_migration", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.TABLES
+    """Union of TABLES across every RLS migration.
+
+    RLS coverage arrives in one revision per feature (a deployed migration
+    is history, not a draft), so the invariant is over the union. A new RLS
+    migration must be registered here, or its tables are invisible to the
+    completeness test below.
+    """
+    paths = [
+        "alembic/versions/d4c9a1e27f50_row_level_security.py",
+        "alembic/versions/c7e15a93d204_rls_monetization_tables.py",
+    ]
+    tables: set[str] = set()
+    for i, path in enumerate(paths):
+        spec = importlib.util.spec_from_file_location(f"rls_migration_{i}", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        tables.update(module.TABLES)
+    return tables
 
 
 def test_migration_covers_every_model_table():

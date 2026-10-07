@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Course, Enrollment, Payment, User
+from app.models import Course, Enrollment, LearnerMaterial, Payment, User
 from app.models.analytics import COURSE_ENROLLED, COURSE_PURCHASED
 from app.models.payment import (
     PAYMENT_FAILED,
@@ -114,13 +114,15 @@ def initialize_transaction(
     amount_naira: int,
     email: str,
     callback_url: str,
-    course_id: int,
+    course_id: int | None = None,
     user_id: int,
+    material_id: int | None = None,
 ) -> str:
     """Start a Paystack transaction and return the hosted checkout URL.
 
     The learner is sent to this URL to pay with a card or bank transfer. It is
-    a hosted page, so no card data ever touches Talyn servers.
+    a hosted page, so no card data ever touches Talyn servers. Exactly one of
+    course_id and material_id says what is being bought.
     """
     import httpx
 
@@ -134,6 +136,7 @@ def initialize_transaction(
         "channels": ["card", "bank", "ussd", "mobile_money", "bank_transfer"],
         "metadata": {
             "course_id": course_id,
+            "material_id": material_id,
             "user_id": user_id,
             "amount_naira": amount_naira,
         },
@@ -248,6 +251,28 @@ def settle_payment(
     payment.channel = str(data.get("channel") or "")[:30] or None
     payment.paid_at = _parse_paid_at(data.get("paid_at")) or datetime.now(timezone.utc)
 
+    if payment.material_id is not None:
+        # A schedule unlock, not a course: no enrollment, no course receipt.
+        # The schedule itself generates lazily on first read after this.
+        from app.models.analytics import PATH_PURCHASED
+
+        user = db.get(User, payment.user_id)
+        track(
+            db,
+            PATH_PURCHASED,
+            user,
+            meta={
+                "material_id": payment.material_id,
+                "amount_naira": payment.amount_naira,
+                "provider": payment.provider,
+                "reference": payment.reference,
+                "source": source,
+            },
+        )
+        db.commit()
+        send_path_receipt(db, payment, user)
+        return True
+
     course = db.get(Course, payment.course_id)
     enrollment = db.scalar(
         select(Enrollment).where(
@@ -316,6 +341,48 @@ def send_receipt(db: Session, payment: Payment, user: User | None,
     )
 
 
+def send_path_receipt(db: Session, payment: Payment, user: User | None) -> None:
+    """Email the schedule-unlock receipt after the money is confirmed.
+
+    Same rule as the course receipt: outside the transaction, and only on
+    the transition to success, so a mail failure never reads as a failed
+    purchase and a replayed webhook cannot send a second receipt.
+    """
+    from app.services import email as email_service
+
+    if user is None:
+        return
+    material = db.get(LearnerMaterial, payment.material_id or 0)
+    email_service.send(
+        db,
+        to_email=user.email,
+        template=email_service.TEMPLATE_PATH_RECEIPT,
+        message=email_service.path_receipt_email(
+            name=user.learner_name or "there",
+            material_title=material.filename if material else "your document",
+            amount_naira=payment.amount_naira,
+            reference=payment.reference,
+        ),
+        user_id=user.id,
+    )
+
+
+def path_paid_for(db: Session, user_id: int, material_id: int) -> Payment | None:
+    """The successful payment behind a schedule unlock, if there is one.
+
+    Status-only, mirroring the course purchase flow: the stub counts in dev,
+    Paystack in production. Permanent once written — the 14 days shape the
+    plan, never gate it.
+    """
+    return db.scalar(
+        select(Payment).where(
+            Payment.user_id == user_id,
+            Payment.material_id == material_id,
+            Payment.status == PAYMENT_SUCCESS,
+        )
+    )
+
+
 def mark_failed(db: Session, payment: Payment, reason: str | None = None) -> None:
     """Record a failed/abandoned payment. Never grants access."""
     if payment.status == PAYMENT_SUCCESS:
@@ -350,7 +417,9 @@ __all__ = [
     "mark_failed",
     "new_reference",
     "naira_to_kobo",
+    "path_paid_for",
     "paystack_enabled",
+    "send_path_receipt",
     "send_receipt",
     "settle_payment",
     "signature_matches",

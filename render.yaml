@@ -83,3 +83,9 @@ services:
       # Empty = in-memory rate limiter, correct on a single instance.
       - key: REDIS_URL
         sync: false
+      # Where document analysis and schedule generation run. Fixed, not
+      # sync:false: this URL is stable public infrastructure, and a sync
+      # must enforce it rather than preserve a hand-typed mistake. Empty
+      # here would fail every analyze/schedule call closed (503).
+      - key: COACH_BASE_URL
+        value: https://talyn-ai-coach.onrender.com

@@ -20,6 +20,11 @@ from app.models.creator import CreatorProfile
 from app.models.asset import LessonAsset
 from app.models.learner_material import LearnerMaterial
 from app.models.learning_path import LearningPath, LearningPathStep
+from app.models.study_schedule import (
+    MaterialAnalysis,
+    ScheduleDay,
+    StudySchedule,
+)
 from app.models.payment import Payment
 from app.models.analytics import AnalyticsEvent
 from app.models.social import CommunityPost, CommunityReply, DirectMessage, LiveSession
@@ -51,6 +56,9 @@ __all__ = [
     "LearnerMaterial",
     "LearningPath",
     "LearningPathStep",
+    "MaterialAnalysis",
+    "ScheduleDay",
+    "StudySchedule",
     "Payment",
     "AnalyticsEvent",
     "CommunityPost",

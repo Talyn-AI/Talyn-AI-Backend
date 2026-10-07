@@ -162,6 +162,7 @@ def _list(items: list[str]) -> str:
 TEMPLATE_WELCOME = "welcome"
 TEMPLATE_PASSWORD_RESET = "password_reset"
 TEMPLATE_RECEIPT = "purchase_receipt"
+TEMPLATE_PATH_RECEIPT = "path_receipt"
 TEMPLATE_VERIFICATION = "email_verification"
 
 
@@ -264,6 +265,43 @@ def purchase_receipt_email(
         f"  Amount:    {amount}\n"
         f"  Reference: {reference}\n\n"
         f"Start learning: {settings.frontend_url}/discover\n\n"
+        "Keep this reference for any billing questions."
+    )
+    return subject, html, text
+
+
+def path_receipt_email(
+    name: str, material_title: str, amount_naira: int, reference: str
+) -> tuple[str, str, str]:
+    """Receipt for a study-schedule unlock. The schedule is permanent: the
+    14 days shape the plan, never gate it, so the email says so plainly.
+    """
+    subject = f"Your receipt — {material_title}"
+    amount = f"₦{amount_naira:,}"
+    start_url = f"{settings.frontend_url}/dashboard"
+    html = _layout(
+        "Payment received",
+        f"Thanks, {name}. Your 14-day study schedule for {material_title} "
+        f"is unlocked — and it is yours to keep, no expiry.",
+        [
+            _list([
+                f"Material: {material_title}",
+                f"Amount paid: {amount}",
+                f"Reference: {reference}",
+            ]),
+        ],
+        cta_label="Start learning",
+        cta_url=start_url,
+        footnote="Keep this reference for any billing questions.",
+    )
+    text = (
+        f"Payment received\n\n"
+        f"Thanks, {name}. Your 14-day study schedule for {material_title} "
+        f"is unlocked, and yours to keep.\n\n"
+        f"  Material: {material_title}\n"
+        f"  Amount:    {amount}\n"
+        f"  Reference: {reference}\n\n"
+        f"Start learning: {start_url}\n\n"
         "Keep this reference for any billing questions."
     )
     return subject, html, text

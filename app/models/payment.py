@@ -13,7 +13,7 @@ immediately so local dev and tests work without an account.
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -30,9 +30,27 @@ PROVIDER_PAYSTACK = "paystack"
 class Payment(Base):
     __tablename__ = "payments"
 
+    __table_args__ = (
+        CheckConstraint(
+            "(course_id IS NOT NULL)::int "
+            "+ (material_id IS NOT NULL)::int = 1",
+            name="ck_payments_single_item",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
+    # Exactly one of these is set (enforced by ck_payments_single_item):
+    # a course purchase, or a generated-schedule unlock for a material.
+    course_id: Mapped[int | None] = mapped_column(
+        ForeignKey("courses.id"), nullable=True, index=True
+    )
+    # Plain integer, deliberately not a foreign key: a payment is a money
+    # trail and must survive the deletion of what it bought. When the
+    # material is gone the schedule is gone with it, so a dangling id here
+    # unlocks nothing.
+    material_id: Mapped[int | None] = mapped_column(Integer, nullable=True,
+                                                    index=True)
     amount_naira: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(10), default="NGN")
     status: Mapped[str] = mapped_column(String(20), default=PAYMENT_PENDING)

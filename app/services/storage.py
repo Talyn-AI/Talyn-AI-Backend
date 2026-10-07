@@ -31,14 +31,16 @@ ALLOWED_CONTENT_TYPES = {
         "text/plain",
     },
     "profile_image": {"image/png", "image/jpeg", "image/webp"},
-    # Learner library documents. Slides included: readings and decks are what
-    # "course materials" mostly are. Video stays creator-only for now — a
-    # 512 MB cap per learner upload is a cost decision, not a type decision.
+    # Learner library documents. Only formats the analyzer can read, plus
+    # zip as an opaque bundle: the library is also a shelf, and analysis
+    # refuses gracefully what it cannot parse. Video stays creator-only for
+    # now — a 512 MB cap per learner upload is a cost decision, not a type
+    # decision. Legacy .doc/.ppt are excluded on purpose: binary OLE
+    # formats need heavy parsers, and "upload OK, analyze impossible" is a
+    # worse experience than refusing them.
     "material": {
         "application/pdf",
-        "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-powerpoint",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "application/zip",
         "text/plain",
@@ -57,7 +59,7 @@ ALLOWED_EXTENSIONS = {
     "video": {".mp4", ".webm", ".mov"},
     "resource": {".pdf", ".doc", ".docx", ".zip", ".txt"},
     "profile_image": {".png", ".jpg", ".jpeg", ".webp"},
-    "material": {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".zip", ".txt"},
+    "material": {".pdf", ".docx", ".pptx", ".zip", ".txt"},
 }
 
 UPLOAD_EXPIRY_SECONDS = 900  # 15 minutes to upload
