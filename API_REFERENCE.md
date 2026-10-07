@@ -31,14 +31,23 @@ client routes on (`verify_email` → `choose_pace` → `choose_interests`
 → `complete` → `done`). Do not reimplement the order in the frontend;
 two implementations of it will disagree.
 
-1. `POST /v1/auth/register` — creates the account and emails a
-   verification link (`/verify-email?token=...`). The welcome email
-   is held back until the address is confirmed.
-2. `POST /v1/auth/email-verification/confirm` — proves the address.
-   Links are single-use and expire after 24 hours. Re-request with
-   `POST /v1/auth/email-verification/request`, which answers
-   identically for known and unknown addresses.
-3. `GET /v1/onboarding/options` (public) — the pace list and the
+1. `GET /v1/auth/email-available?email=...` — the email-first
+   check. `available: false` means the address is taken: say so
+   immediately and route to login instead of registering.
+2. `POST /v1/auth/register` — creates the account and emails a
+   6-digit verification code (15 minutes, ten guesses). The welcome
+   email is held back until the address is confirmed.
+3. `POST /v1/auth/otp/verify` (`email` + `code` +
+   `purpose: "signup"`) — proves the address. Answers
+   `next_step: "onboarding"`; route there, not to the dashboard.
+   Re-request codes with `POST /v1/auth/email-verification/request`,
+   which answers identically for known and unknown addresses.
+4. Password reset is the same shape: `POST
+   /v1/auth/password-reset/request` sends a code, and either `POST
+   /v1/auth/password-reset/confirm` or `/v1/auth/otp/verify` with
+   `purpose: "reset"` plus `new_password` completes it — answering
+   `next_step: "login"` so the client routes there.
+5. `GET /v1/onboarding/options` (public) — the pace list and the
    interest list. Render pickers from this; never hardcode the
    options, or the client will offer values the API rejects.
 4. `POST /v1/onboarding/complete` (`learning_pace` + `interests`) —
@@ -71,7 +80,7 @@ button can be hidden before either is ever hit.
 
 ---
 
-126 endpoints across 20 areas.
+131 endpoints across 20 areas.
 
 ## Admin
 
@@ -186,10 +195,10 @@ Change a user's roles. Self-demotion is rejected; changes are logged.
 | | Method | Path | Auth | Wired |
 |---|---|---|---|---|
 | | `GET` | `/v1/auth/email-available` | — public | ✓ |
-| | `POST` | `/v1/auth/email-verification/confirm` | — public | — |
 | | `POST` | `/v1/auth/email-verification/request` | — public | — |
 | | `POST` | `/v1/auth/google` | — public | ✓ |
 | | `POST` | `/v1/auth/login` | — public | ✓ |
+| | `POST` | `/v1/auth/otp/verify` | — public | — |
 | | `POST` | `/v1/auth/password-reset/confirm` | — public | ✓ |
 | | `POST` | `/v1/auth/password-reset/request` | — public | ✓ |
 | | `POST` | `/v1/auth/refresh` | — public | ✓ |
@@ -211,34 +220,9 @@ object
 - **422** Validation Error
 
 
-### POST /v1/auth/email-verification/confirm
-
-Mark an address verified using the emailed token.
-
-The token is spent in the same transaction that stamps the verification, so
-a link that worked once cannot be replayed. Confirming an already-verified
-address succeeds rather than erroring: a user clicking a second email from
-their inbox should not be shown a failure.
-
-**Request body**
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `token` | string | yes | — |
-
-
-**Responses**
-
-**200**
-
-object
-
-- **422** Validation Error
-
-
 ### POST /v1/auth/email-verification/request
 
-(Re)send the verification link.
+(Re)send the verification code.
 
 Idempotent and non-disclosing: an already-verified address and an unknown
 one get the same response and roughly the same work, so this cannot be used
@@ -313,22 +297,52 @@ Authenticate and receive a JWT bearer token.
 - **422** Validation Error
 
 
-### POST /v1/auth/password-reset/confirm
+### POST /v1/auth/otp/verify
 
-Set a new password using a reset link or a reset code.
+Verify a one-time code, for signup or password reset.
 
-The credential is spent in the same transaction as the password change,
-so one that worked once cannot work again — including if someone replays
-it after the legitimate owner has already reset. Both credentials redeem
-the same row, so using either spends both.
+The single verification endpoint: `purpose` says which flow the code
+belongs to, so the frontend collects one code the same way in both
+places. Codes are single-use, expire after 15 minutes, and burn after
+ten wrong guesses.
+
+Signup success answers `next_step: "onboarding"`; a reset answers
+`next_step: "login"` — the client routes on these rather than
+hardcoding what comes after each flow.
 
 **Request body**
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `token` | string *(nullable)* | no | Reset token from the emailed link (use either this or email + code) |
-| `email` | string (email) *(nullable)* | no | Account email the code was sent to (required with code) |
-| `code` | string *(nullable)* | no | 6-digit code from the reset email (required with email) |
+| `email` | string (email) | yes | — |
+| `code` | string | yes | — |
+| `purpose` | string (one of `signup`, `reset`) | yes | — |
+| `new_password` | string *(nullable)* | no | — |
+
+
+**Responses**
+
+**200**
+
+object
+
+- **422** Validation Error
+
+
+### POST /v1/auth/password-reset/confirm
+
+Set a new password using a reset code.
+
+The code is spent in the same transaction as the password change, so one
+that worked once cannot work again — including if someone replays it
+after the legitimate owner has already reset.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `email` | string (email) | yes | — |
+| `code` | string | yes | — |
 | `new_password` | string | yes | — |
 
 
@@ -345,10 +359,10 @@ object
 
 Start a password reset.
 
-Production: the reset link and code are emailed; neither ever appears in
-the response. If email is not configured outside dev, this fails closed
-(503) instead of leaking them.
-Dev (no SMTP configured): both are returned inline with a warning.
+Production: the reset code is emailed; it never appears in the response.
+If email is not configured outside dev, this fails closed (503) instead
+of leaking it.
+Dev (no SMTP configured): the code is returned inline with a warning.
 The response shape is identical whether or not the email exists, so this
 endpoint cannot be used to discover which addresses are registered.
 
@@ -1316,7 +1330,7 @@ Creator stats: courses, learners, revenue, recent activity.
 | `draft_courses` | integer | yes | — |
 | `total_learners` | integer | yes | — |
 | `total_revenue_naira` | integer | no | default `0` |
-| `recent_activity` | array of ActivityEntry | no | default `[]` |
+| `recent_activity` | array of app__schemas__creator__ActivityEntry | no | default `[]` |
 
 <details><summary><code>recent_activity</code> object</summary>
 
@@ -3098,10 +3112,14 @@ object
 | | Method | Path | Auth | Wired |
 |---|---|---|---|---|
 | | `GET` | `/v1/me/badges` | 🔒 user | ✓ |
+| | `GET` | `/v1/me/check-ins` | 🔒 user | — |
+| | `POST` | `/v1/me/check-ins` | 🔒 user | — |
 | | `GET` | `/v1/me/context` | 🔒 user | ✓ |
 | | `DELETE` | `/v1/me/conversation` | 🔒 user | — |
 | | `GET` | `/v1/me/conversation` | 🔒 user | — |
 | | `POST` | `/v1/me/conversation` | 🔒 user | — |
+| | `POST` | `/v1/me/course-qa` | 🔒 user | — |
+| | `GET` | `/v1/me/dashboard` | 🔒 user | — |
 | | `POST` | `/v1/me/enroll/{course_id}` | 🔒 user | ✓ |
 | | `GET` | `/v1/me/enrollments` | 🔒 user | ✓ |
 | | `POST` | `/v1/me/lessons/{lesson_id}/complete` | 🔒 user | ✓ |
@@ -3134,6 +3152,52 @@ array of objects
 | `description` | string | yes | — |
 | `icon` | string *(nullable)* | no | — |
 | `earned_date` | string (date-time) | yes | — |
+
+- **422** Validation Error
+
+
+### GET /v1/me/check-ins
+
+Recent check-ins, newest first. Powers the Progress page calendar.
+
+**Responses**
+
+**200**
+
+array of objects
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `date` | string | yes | — |
+| `mood` | string *(nullable)* | no | — |
+| `note` | string | no | default `` |
+| `xp_awarded` | integer | no | default `0` |
+
+- **422** Validation Error
+
+
+### POST /v1/me/check-ins
+
+Record today's check-in. 201 the first time, 200 on repeat taps.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `mood` | string *(nullable)* | no | — |
+| `note` | string | no | default `` |
+
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `date` | string | yes | — |
+| `mood` | string *(nullable)* | no | — |
+| `note` | string | no | default `` |
+| `xp_awarded` | integer | no | default `0` |
 
 - **422** Validation Error
 
@@ -3248,6 +3312,118 @@ Persist one chat turn (learner or coach) for later context.
 | `created_at` | string (date-time) | yes | — |
 
 - **422** Validation Error
+
+
+### POST /v1/me/course-qa
+
+Answer a question strictly from the course's own lesson text.
+
+The backend assembles the content; the coach only reasons over it. Sources
+are the lesson titles actually supplied, reported by the backend rather
+than the model, so a cited lesson always exists. Requires enrollment,
+like any other progress action on the course.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `course_id` | integer | yes | — |
+| `lesson_id` | integer *(nullable)* | no | — |
+| `question` | string | yes | — |
+
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `answer` | string | yes | — |
+| `sources` | array of string | no | default `[]` |
+
+- **422** Validation Error
+
+
+### GET /v1/me/dashboard
+
+Everything the learner's home screens need in one call.
+
+Enrollments with progress ("my learning"), saved learning paths,
+XP/level/streak, quiz summary, recent activity, the last week's
+check-ins, the study plan, and where onboarding stands. Reads only —
+nothing here changes state, so polling it is safe.
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `enrollments` | array of EnrollmentProgress | no | default `[]` |
+| `learning_paths` | array of Path | no | default `[]` |
+| `xp_total` | integer | no | default `0` |
+| `xp_this_week` | integer | no | default `0` |
+| `level` | integer | no | default `1` |
+| `level_title` | string | no | default `` |
+| `streak_days` | integer | no | default `0` |
+| `quiz` | QuizSummary | no | default `{'quizzes_taken': 0, 'average_score': 0.0, 'topics_attempted': 0}` |
+| `recent_activity` | array of app__schemas__progress__ActivityEntry | no | default `[]` |
+| `checkins_last_7_days` | array of string | no | default `[]` |
+| `checked_in_today` | boolean | no | default `False` |
+| `study_plan` | StudyPlan *(nullable)* | no | — |
+| `onboarding_next_step` | string | no | default `done` |
+
+<details><summary><code>enrollments</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `course_id` | integer | yes | — |
+| `title` | string | yes | — |
+| `difficulty_level` | string | yes | — |
+| `lessons_total` | integer | yes | — |
+| `lessons_completed` | integer | yes | — |
+| `completion_percent` | number | yes | — |
+| `completed` | boolean | yes | — |
+| `enrolled_at` | string (date-time) | yes | — |
+
+</details>
+
+<details><summary><code>learning_paths</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | no | default `` |
+| `steps` | array of PathStep | no | default `[]` |
+| `courses_total` | integer | no | default `0` |
+| `courses_completed` | integer | no | default `0` |
+| `completion_percent` | number | no | default `0.0` |
+| `created_at` | string (date-time) *(nullable)* | no | — |
+| `updated_at` | string (date-time) *(nullable)* | no | — |
+
+</details>
+
+<details><summary><code>quiz</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `quizzes_taken` | integer | no | default `0` |
+| `average_score` | number | no | default `0.0` |
+| `topics_attempted` | integer | no | default `0` |
+
+</details>
+
+<details><summary><code>recent_activity</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `activity` | string | yes | — |
+| `amount` | integer | yes | — |
+| `note` | string | no | default `` |
+| `at` | string (date-time) | yes | — |
+
+</details>
 
 
 ### POST /v1/me/enroll/{course_id}
@@ -3704,6 +3880,7 @@ size is checked here too, purely to fail fast with a clear message.
 | | `GET` | `/v1/users/me` | 🔒 user | ✓ |
 | | `PATCH` | `/v1/users/me` | 🔒 user | ✓ |
 | | `PATCH` | `/v1/users/me/password` | 🔒 user | ✓ |
+| | `PUT` | `/v1/users/me/personalization` | 🔒 user | ✓ |
 
 ### DELETE /v1/users/me
 
@@ -3796,6 +3973,39 @@ Change the learner's password (requires the current one).
 **200**
 
 object
+
+- **422** Validation Error
+
+
+### PUT /v1/users/me/personalization
+
+Update learning preferences: interests, time commitment, pace.
+
+Everything optional; only present fields change. A pace reseeds the
+study plan exactly like onboarding does, and an explicit daily goal
+wins over the reseeded one when both are given. Clearing interests is
+allowed, and honestly flips onboarding status back to choose_interests
+the next time it is read.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `interests` | array of string *(nullable)* | no | — |
+| `daily_goal_minutes` | integer *(nullable)* | no | — |
+| `learning_pace` | string *(nullable)* | no | — |
+
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `interests` | array of string | yes | — |
+| `learning_pace` | string *(nullable)* | yes | — |
+| `daily_goal_minutes` | integer | yes | — |
+| `weekly_target_lessons` | integer | yes | — |
 
 - **422** Validation Error
 

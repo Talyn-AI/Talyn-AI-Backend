@@ -11,9 +11,11 @@ from app.core.deps import get_current_user, require_onboarding
 from app.database import get_db
 from app.models import (
     Badge,
+    CheckIn,
     ConversationMessage,
     Course,
     Enrollment,
+    LearningPath,
     Lesson,
     LessonProgress,
     QuizResult,
@@ -24,15 +26,20 @@ from app.models import (
 from app.schemas import (
     CONVERSATION_ROLES,
     MANUAL_XP_ACTIVITIES,
+    ActivityEntry,
     BadgeRead,
     ConversationIn,
     ConversationRead,
+    CourseQaIn,
+    CourseQaOut,
+    DashboardOut,
     EnrollmentProgress,
     LearnerContextOut,
     LessonCompleteOut,
     LessonCompleteRequest,
     LessonStartOut,
     QuizSubmit,
+    QuizSummary,
     StudyPlanIn,
     StudyPlanRead,
     XpAwardIn,
@@ -51,6 +58,7 @@ from app.services.xp import (
     award_quiz_xp,
     award_xp,
     level_info,
+    streak_days,
     xp_this_week,
     xp_total,
 )
@@ -179,6 +187,90 @@ def complete_lesson(
 
 
 # ── Quiz submission ──────────────────────────────────────────────────────────
+
+# ── Course Q&A (grounded in lesson content) ──────────────────────────────────
+
+# Characters of lesson text sent per question. ~15k tokens of input: full
+# small courses go whole, large ones contribute their opening lessons in
+# order — which is where the foundations the questions are about live.
+MAX_QA_CHARS = 60_000
+
+
+@router.post("/course-qa", response_model=CourseQaOut)
+def course_qa(
+    payload: CourseQaIn,
+    current_user: User = Depends(require_onboarding),
+    db: Session = Depends(get_db),
+) -> CourseQaOut:
+    """Answer a question strictly from the course's own lesson text.
+
+    The backend assembles the content; the coach only reasons over it. Sources
+    are the lesson titles actually supplied, reported by the backend rather
+    than the model, so a cited lesson always exists. Requires enrollment,
+    like any other progress action on the course.
+    """
+    from app.services import coach_client
+
+    course = db.get(Course, payload.course_id)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if payload.lesson_id is not None:
+        only = db.get(Lesson, payload.lesson_id)
+        if only is None or only.course_id != course.id:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        if not only.is_published:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        lessons = [only]
+    else:
+        lessons = db.scalars(
+            select(Lesson)
+            .where(Lesson.course_id == course.id,
+                   Lesson.is_published.is_(True))
+            .order_by(Lesson.order, Lesson.id)
+        ).all()
+    if not lessons:
+        raise HTTPException(
+            status_code=422, detail="This course has no readable content yet"
+        )
+    # Access is per-course (enrollment; managers bypass for preview), so
+    # checking through the first lesson covers the whole question.
+    _require_progress_access(db, current_user, lessons[0])
+
+    included: list[Lesson] = []
+    total = 0
+    for lesson in lessons:
+        block = f"## {lesson.title}\n{(lesson.content or '').strip()}"
+        if total + len(block) > MAX_QA_CHARS:
+            break
+        included.append(lesson)
+        total += len(block)
+    if not any((lesson.content or "").strip() for lesson in included):
+        raise HTTPException(
+            status_code=422, detail="This course has no readable content yet"
+        )
+    content = "\n\n".join(
+        f"## {lesson.title}\n{(lesson.content or '').strip()}"
+        for lesson in included
+    )
+
+    try:
+        answer = coach_client.ask_course_question(
+            current_user.id, course.title, content, payload.question
+        )
+    except coach_client.CoachUnavailable as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)
+        ) from e
+    except coach_client.CoachError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)
+        ) from e
+
+    return CourseQaOut(
+        answer=answer,
+        sources=[lesson.title for lesson in included],
+    )
 
 @router.post("/quiz-results", response_model=QuizSubmit)
 def submit_quiz(
@@ -698,3 +790,108 @@ def get_revision_profile(
 ) -> dict:
     """Revision profile: one record per encountered topic."""
     return revision_profile(db, current_user)
+
+
+# ── Dashboard (one call for the Dashboard + Progress pages) ──────────────────
+
+
+@router.get("/dashboard", response_model=DashboardOut)
+def dashboard(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DashboardOut:
+    """Everything the learner's home screens need in one call.
+
+    Enrollments with progress ("my learning"), saved learning paths,
+    XP/level/streak, quiz summary, recent activity, the last week's
+    check-ins, the study plan, and where onboarding stands. Reads only —
+    nothing here changes state, so polling it is safe.
+    """
+    from datetime import datetime, timezone
+
+    from app.routers.learning_paths import _read_path
+    from app.routers.onboarding import _next_step
+
+    enrollments = [
+        EnrollmentProgress(
+            course_id=course.id,
+            title=course.title,
+            difficulty_level=course.difficulty_level,
+            lessons_total=total,
+            lessons_completed=done,
+            completion_percent=round(done / total * 100, 1) if total else 0.0,
+            completed=enrollment.completed,
+            enrolled_at=enrollment.enrolled_at,
+        )
+        for enrollment in db.scalars(
+            select(Enrollment)
+            .where(Enrollment.user_id == current_user.id)
+            .order_by(Enrollment.enrolled_at)
+            .limit(50)
+        ).all()
+        if (course := db.get(Course, enrollment.course_id)) is not None
+        for total, done in [_course_progress(db, current_user, course.id)]
+    ]
+
+    paths = [
+        _read_path(db, current_user, path)
+        for path in db.scalars(
+            select(LearningPath)
+            .where(LearningPath.user_id == current_user.id)
+            .order_by(LearningPath.id.desc())
+        ).all()
+    ]
+
+    total = xp_total(db, current_user)
+    li = level_info(total)
+
+    quiz_rows = db.scalars(
+        select(QuizResult).where(QuizResult.user_id == current_user.id)
+    ).all()
+    quiz = QuizSummary(
+        quizzes_taken=len(quiz_rows),
+        average_score=round(
+            sum(r.score_percent for r in quiz_rows) / len(quiz_rows), 1
+        ) if quiz_rows else 0.0,
+        topics_attempted=len({r.topic for r in quiz_rows}),
+    )
+
+    recent = db.scalars(
+        select(XpEvent)
+        .where(XpEvent.user_id == current_user.id)
+        .order_by(XpEvent.earned_date.desc())
+        .limit(15)
+    ).all()
+
+    today = datetime.now(timezone.utc).date()
+    checkins = db.scalars(
+        select(CheckIn)
+        .where(CheckIn.user_id == current_user.id)
+        .order_by(CheckIn.check_date.desc())
+        .limit(7)
+    ).all()
+
+    payload = study_plan_payload(db, current_user)
+
+    return DashboardOut(
+        enrollments=enrollments,
+        learning_paths=paths,
+        xp_total=total,
+        xp_this_week=xp_this_week(db, current_user),
+        level=li["level"],
+        level_title=li["title"],
+        streak_days=streak_days(db, current_user),
+        quiz=quiz,
+        recent_activity=[
+            ActivityEntry(activity=e.activity, amount=e.amount,
+                          note=e.note or "", at=e.earned_date)
+            for e in recent
+        ],
+        checkins_last_7_days=[c.check_date for c in checkins],
+        checked_in_today=any(c.check_date == today for c in checkins),
+        study_plan=StudyPlanRead(
+            id=plan.id,
+            **payload,
+        ) if payload is not None else None,
+        onboarding_next_step=_next_step(current_user),
+    )

@@ -185,7 +185,7 @@ def test_send_or_raise_raises_on_resend_failure(resend, db_session):
     with pytest.raises(email_service.EmailError):
         email_service.send_or_raise(
             db_session, to_email="a@example.com", template="password_reset",
-            message=email_service.password_reset_email("https://x/reset", "042013"),
+            message=email_service.password_reset_email("042013"),
         )
 
 
@@ -223,7 +223,7 @@ def test_resend_wins_when_smtp_is_also_configured(
 
 def test_reset_wrapper_uses_resend(resend):
     """The backwards-compatible wrapper must follow the same transport rule."""
-    email_service.send_password_reset_email("a@example.com", "https://x/reset")
+    email_service.send_password_reset_email("a@example.com", "042013")
 
 
 def test_is_configured_with_resend_alone(resend):

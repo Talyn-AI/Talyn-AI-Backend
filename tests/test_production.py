@@ -1,4 +1,6 @@
 """Tests for production email reset and the admin management API."""
+import re
+
 import pytest
 
 from app import config as config_module
@@ -96,6 +98,7 @@ def test_reset_sends_email_not_token(client, auth_headers, smtp_settings, fake_s
         "/v1/auth/password-reset/request", json={"email": "kwame@example.com"}
     )
     assert r.status_code == 200
+    assert "reset_code" not in r.json()
     assert "reset_token" not in r.json()
 
     # Registration also sends a welcome, so look for the reset specifically.
@@ -104,8 +107,8 @@ def test_reset_sends_email_not_token(client, auth_headers, smtp_settings, fake_s
     assert len(resets) == 1
     body = _plain_text(resets[0])
     assert resets[0]["To"] == "kwame@example.com"
-    assert "password-reset?token=" in body
-    assert "https://app.example.com/password-reset?token=" in body
+    assert re.search(r"Your code: (\d{6})", body)
+    assert "token=" not in body
 
 
 def test_reset_email_failure_is_502(client, auth_headers, smtp_settings, monkeypatch):
@@ -136,12 +139,14 @@ def test_emailed_token_completes_reset(client, auth_headers, smtp_settings, fake
     resets = [m for m in fake_smtp.last_instance.sent
               if "Reset your" in (m["Subject"] or "")]
     body = _plain_text(resets[0])
-    token = body.split("token=")[1].split()[0].strip()
+    code = re.search(r"Your code: (\d{6})", body).group(1)
     r = client.post(
         "/v1/auth/password-reset/confirm",
-        json={"token": token, "new_password": "emailedok1"},
+        json={"email": "kwame@example.com", "code": code,
+              "new_password": "emailedok1"},
     )
     assert r.status_code == 200
+    assert r.json()["next_step"] == "login"
     assert client.post(
         "/v1/auth/login",
         json={"email": "kwame@example.com", "password": "emailedok1"},

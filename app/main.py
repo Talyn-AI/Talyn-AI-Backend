@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import get_db
 from app.core.observability import ObservabilityMiddleware, configure_logging
 from app.core.rate_limit import RateLimitMiddleware
-from app.routers import auth_router, users_router, courses_router, progress_router, missions_router, missions_catalog_router, creator_missions_router, onboarding_router, waitlist_router, learner_library_router, learning_paths_router, buddies_router, admin_router, creators_router, creators_public_router, curriculum_router, curriculum_lessons_router, uploads_router, files_router, lesson_assets_router, purchases_router, payments_webhook_router, community_router, messages_router, live_router, live_detail_router
+from app.routers import auth_router, users_router, courses_router, progress_router, missions_router, missions_catalog_router, creator_missions_router, onboarding_router, waitlist_router, learner_library_router, learning_paths_router, checkins_router, buddies_router, admin_router, creators_router, creators_public_router, curriculum_router, curriculum_lessons_router, uploads_router, files_router, lesson_assets_router, purchases_router, payments_webhook_router, community_router, messages_router, live_router, live_detail_router
 
 settings.ensure_production_secrets()
 configure_logging()
@@ -42,6 +42,7 @@ app.include_router(onboarding_router, prefix="/v1")
 app.include_router(waitlist_router, prefix="/v1")
 app.include_router(learner_library_router, prefix="/v1")
 app.include_router(learning_paths_router, prefix="/v1")
+app.include_router(checkins_router, prefix="/v1")
 app.include_router(buddies_router, prefix="/v1")
 app.include_router(admin_router, prefix="/v1")
 app.include_router(creators_router, prefix="/v1")

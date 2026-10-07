@@ -26,6 +26,9 @@ AUTH_PATH_FRAGMENTS = (
     "/auth/register",
     "/auth/refresh",
     "/auth/password-reset",
+    # OTP guessing is credential-sensitive too: ten wrong codes burn the row,
+    # and the tight bucket keeps even that from being hurried.
+    "/auth/otp",
     # Not credential-sensitive, but public and unauthenticated: it needs the
     # same protection against being filled by a script.
     "/waitlist",

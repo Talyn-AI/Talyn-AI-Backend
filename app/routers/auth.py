@@ -20,19 +20,19 @@ from app.schemas import (
     GoogleAuthIn,
     EmailAvailability,
     LoginRequest,
+    OtpVerifyIn,
     PasswordResetConfirm,
     PasswordResetRequest,
     RefreshRequest,
     Token,
     UserCreate,
     UserRead,
-    VerificationConfirmIn,
     VerificationRequestIn,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-RESET_REQUEST_MESSAGE = "If the email exists, a reset link was sent"
+RESET_REQUEST_MESSAGE = "If the email exists, a reset code was sent"
 
 
 @router.get("/email-available")
@@ -97,28 +97,26 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
 
 
 def _send_verification(db: Session, user: User) -> None:
-    """Issue and email a verification link. Never raises.
+    """Issue and email a verification code. Never raises.
 
     Returns nothing it needs the caller to check: the account exists either
     way, and the onboarding gate is the real enforcement — an unverified user
     simply cannot complete setup.
     """
-    from app import config as config_module
     from app.services import email as email_service
     from app.services import verification_tokens
 
     try:
-        raw, _row = verification_tokens.issue(db, user)
+        code, _row = verification_tokens.issue(db, user)
     except Exception:
-        # Token bookkeeping is not worth failing a signup over.
+        # Code bookkeeping is not worth failing a signup over.
         return
 
-    verify_link = f"{config_module.settings.frontend_url}/verify-email?token={raw}"
     email_service.send(
         db,
         to_email=user.email,
         template=email_service.TEMPLATE_VERIFICATION,
-        message=email_service.verification_email(verify_link),
+        message=email_service.verification_code_email(code),
         user_id=user.id,
     )
 
@@ -172,10 +170,10 @@ def request_password_reset(
 ) -> dict:
     """Start a password reset.
 
-    Production: the reset link and code are emailed; neither ever appears in
-    the response. If email is not configured outside dev, this fails closed
-    (503) instead of leaking them.
-    Dev (no SMTP configured): both are returned inline with a warning.
+    Production: the reset code is emailed; it never appears in the response.
+    If email is not configured outside dev, this fails closed (503) instead
+    of leaking it.
+    Dev (no SMTP configured): the code is returned inline with a warning.
     The response shape is identical whether or not the email exists, so this
     endpoint cannot be used to discover which addresses are registered.
     """
@@ -189,10 +187,7 @@ def request_password_reset(
     if user is None:
         return {"message": RESET_REQUEST_MESSAGE}
 
-    raw, code, _row = reset_tokens.issue(db, user)
-    # Path matches the deployed frontend's route. It was /reset-password, which
-    # that app has never had — every reset link was a 404.
-    reset_link = f"{config_module.settings.frontend_url}/password-reset?token={raw}"
+    code, _row = reset_tokens.issue(db, user)
 
     if email_service.is_configured():
         try:
@@ -200,7 +195,7 @@ def request_password_reset(
                 db,
                 to_email=payload.email,
                 template=email_service.TEMPLATE_PASSWORD_RESET,
-                message=email_service.password_reset_email(reset_link, code),
+                message=email_service.password_reset_email(code),
                 user_id=user.id,
             )
         except email_service.EmailError as e:
@@ -219,10 +214,9 @@ def request_password_reset(
             detail="Password reset is unavailable (email not configured)",
         )
     return {
-        "message": "If the email exists, a reset token was issued",
-        "reset_token": raw,
+        "message": "If the email exists, a reset code was issued",
         "reset_code": code,
-        "warning": "DEV-ONLY: token returned inline; email it in production",
+        "warning": "DEV-ONLY: code returned inline; email it in production",
     }
 
 
@@ -230,7 +224,7 @@ def request_password_reset(
 def request_email_verification(
     payload: VerificationRequestIn, db: Session = Depends(get_db)
 ) -> dict:
-    """(Re)send the verification link.
+    """(Re)send the verification code.
 
     Idempotent and non-disclosing: an already-verified address and an unknown
     one get the same response and roughly the same work, so this cannot be used
@@ -240,14 +234,13 @@ def request_email_verification(
     from app.services import email as email_service
     from app.services import verification_tokens
 
-    VERIFY_REQUEST_MESSAGE = "If the account exists, a verification link was sent"
+    VERIFY_REQUEST_MESSAGE = "If the account exists, a verification code was sent"
 
     user = db.scalar(select(User).where(User.email == payload.email))
     if user is None or user.email_verified_at is not None:
         return {"message": VERIFY_REQUEST_MESSAGE}
 
-    raw, _row = verification_tokens.issue(db, user)
-    verify_link = f"{config_module.settings.frontend_url}/verify-email?token={raw}"
+    code, _row = verification_tokens.issue(db, user)
 
     if email_service.is_configured():
         try:
@@ -255,7 +248,7 @@ def request_email_verification(
                 db,
                 to_email=payload.email,
                 template=email_service.TEMPLATE_VERIFICATION,
-                message=email_service.verification_email(verify_link),
+                message=email_service.verification_code_email(code),
                 user_id=user.id,
             )
         except email_service.EmailError as e:
@@ -274,49 +267,73 @@ def request_email_verification(
         )
     return {
         "message": VERIFY_REQUEST_MESSAGE,
-        "verification_token": raw,
-        "warning": "DEV-ONLY: token returned inline; email it in production",
+        "verification_code": code,
+        "warning": "DEV-ONLY: code returned inline; email it in production",
     }
 
 
-@router.post("/email-verification/confirm")
-def confirm_email_verification(
-    payload: VerificationConfirmIn, db: Session = Depends(get_db)
-) -> dict:
-    """Mark an address verified using the emailed token.
+@router.post("/otp/verify")
+def verify_otp(payload: OtpVerifyIn, db: Session = Depends(get_db)) -> dict:
+    """Verify a one-time code, for signup or password reset.
 
-    The token is spent in the same transaction that stamps the verification, so
-    a link that worked once cannot be replayed. Confirming an already-verified
-    address succeeds rather than erroring: a user clicking a second email from
-    their inbox should not be shown a failure.
+    The single verification endpoint: `purpose` says which flow the code
+    belongs to, so the frontend collects one code the same way in both
+    places. Codes are single-use, expire after 15 minutes, and burn after
+    ten wrong guesses.
+
+    Signup success answers `next_step: "onboarding"`; a reset answers
+    `next_step: "login"` — the client routes on these rather than
+    hardcoding what comes after each flow.
     """
+    from app.services import reset_tokens
     from app.services import verification_tokens
 
+    if payload.purpose == "signup":
+        try:
+            user = verification_tokens.redeem_code(
+                db, str(payload.email), str(payload.code)
+            )
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
+            ) from e
+
+        verification_tokens.mark_verified(db, user)
+
+        # The welcome was held back at signup until now, so the address is
+        # proven. Best-effort: a failed welcome must not fail a confirmation
+        # the user genuinely completed.
+        from app.services import email as email_service
+
+        email_service.send(
+            db,
+            to_email=user.email,
+            template=email_service.TEMPLATE_WELCOME,
+            message=email_service.welcome_email(user.learner_name or "there"),
+            user_id=user.id,
+        )
+        return {
+            "email": user.email,
+            "email_verified": True,
+            "message": "Email confirmed. You can finish setting up your account.",
+            "next_step": "onboarding",
+        }
+
     try:
-        user = verification_tokens.redeem(db, payload.token)
+        user = reset_tokens.redeem_code(
+            db, str(payload.email), str(payload.code)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
         ) from e
 
-    verification_tokens.mark_verified(db, user)
-
-    # The welcome was held back at signup until now, so the address is proven.
-    # Best-effort: a failed welcome must not fail a confirmation the user
-    # genuinely completed.
-    from app.services import email as email_service
-
-    email_service.send(
-        db,
-        to_email=user.email,
-        template=email_service.TEMPLATE_WELCOME,
-        message=email_service.welcome_email(user.learner_name or "there"),
-        user_id=user.id,
-    )
+    user.password_hash = hash_password(str(payload.new_password))
+    reset_tokens.invalidate_all(db, user.id)
+    db.commit()
     return {
-        "email": user.email,
-        "email_verified": True,
-        "message": "Email confirmed. You can finish setting up your account.",
+        "message": "Password has been reset",
+        "next_step": "login",
     }
 
 
@@ -324,22 +341,18 @@ def confirm_email_verification(
 def confirm_password_reset(
     payload: PasswordResetConfirm, db: Session = Depends(get_db)
 ) -> dict:
-    """Set a new password using a reset link or a reset code.
+    """Set a new password using a reset code.
 
-    The credential is spent in the same transaction as the password change,
-    so one that worked once cannot work again — including if someone replays
-    it after the legitimate owner has already reset. Both credentials redeem
-    the same row, so using either spends both.
+    The code is spent in the same transaction as the password change, so one
+    that worked once cannot work again — including if someone replays it
+    after the legitimate owner has already reset.
     """
     from app.services import reset_tokens
 
     try:
-        if payload.token is not None:
-            user = reset_tokens.redeem(db, payload.token)
-        else:
-            user = reset_tokens.redeem_code(
-                db, str(payload.email), str(payload.code)
-            )
+        user = reset_tokens.redeem_code(
+            db, str(payload.email), str(payload.code)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)
@@ -349,7 +362,7 @@ def confirm_password_reset(
     # Every other live token for this account dies with this one.
     reset_tokens.invalidate_all(db, user.id)
     db.commit()
-    return {"message": "Password has been reset"}
+    return {"message": "Password has been reset", "next_step": "login"}
 
 
 @router.post("/google", response_model=Token)

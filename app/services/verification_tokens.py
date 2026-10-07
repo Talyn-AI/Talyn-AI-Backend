@@ -1,40 +1,31 @@
-"""Single-use email verification tokens.
+"""Single-use email verification codes.
 
-Same shape as the password reset tokens, for the same reasons: only the
-SHA-256 of the token is stored, so a database leak cannot be turned into
-working verification links, and the token is spent in the same transaction that
-marks the address verified.
+Same shape as the password reset codes, for the same reasons: only the HMAC
+of the code is stored, a wrong guess burns one of ten attempts, and the code
+is spent in the same transaction that marks the address verified.
 
-Requesting a new token invalidates earlier ones for that address. Resend is a
-normal thing for a user to do, and a second live token would mean the first
+Requesting a new code invalidates earlier ones for that address. Resend is a
+normal thing for a user to do, and a second live code would mean the first
 one still works even after the newer one has been used.
 """
-import hashlib
-import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import EmailVerificationToken, User
-
-# Longer than a password reset: someone who has just signed up may take a
-# while to open their first email, and losing the account to a 15-minute
-# window would be a terrible first impression.
-VERIFY_TOKEN_EXPIRE_HOURS = 24
-
-TOKEN_BYTES = 32  # 256 bits
-
-
-def hash_token(raw: str) -> str:
-    """Hex SHA-256. Plain tokens are never stored or logged."""
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+from app.services.otp import (
+    CODE_EXPIRE_MINUTES,
+    CODE_MAX_ATTEMPTS,
+    hash_code,
+    new_code,
+)
 
 
 def issue(db: Session, user: User) -> tuple[str, EmailVerificationToken]:
-    """Create a verification token, invalidating earlier ones. Returns (raw, row).
+    """Create a verification code, invalidating earlier ones. Returns (code, row).
 
-    The caller emails the raw value and never persists it.
+    The caller emails the code and never persists it.
     """
     db.execute(
         update(EmailVerificationToken)
@@ -42,46 +33,69 @@ def issue(db: Session, user: User) -> tuple[str, EmailVerificationToken]:
         .values(used_at=datetime.now(timezone.utc))
     )
 
-    raw = secrets.token_urlsafe(TOKEN_BYTES)
+    code = new_code()
     row = EmailVerificationToken(
         user_id=user.id,
-        token_hash=hash_token(raw),
+        token_hash=None,
+        code_hash=hash_code(code),
         expires_at=datetime.now(timezone.utc)
-        + timedelta(hours=VERIFY_TOKEN_EXPIRE_HOURS),
+        + timedelta(minutes=CODE_EXPIRE_MINUTES),
     )
     db.add(row)
     db.commit()
     db.refresh(row)
-    return raw, row
+    return code, row
 
 
-def redeem(db: Session, raw: str) -> User:
-    """Return the user for a valid, unspent, unexpired token and mark it spent.
+def redeem_code(db: Session, email: str, code: str) -> User:
+    """Return the user for a valid code and mark the row spent.
 
-    Raises ValueError when the token is unusable. The lookup is by hash, so a
-    wrong token is indistinguishable from a spent one to the caller.
+    Scoped to the account's email, counted guesses, committed-on-failure —
+    the same contract as the reset codes, because it defends against the
+    same attacker. Raises ValueError when the code is unusable.
     """
-    row = db.scalar(
-        select(EmailVerificationToken).where(
-            EmailVerificationToken.token_hash == hash_token(raw)
+    user = db.scalar(select(User).where(User.email == email.strip().lower()))
+    row = None
+    if user is not None:
+        row = db.scalar(
+            select(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.user_id == user.id,
+                EmailVerificationToken.code_hash.is_not(None),
+                EmailVerificationToken.used_at.is_(None),
+            )
+            .order_by(EmailVerificationToken.id.desc())
+            .limit(1)
         )
-    )
-    if row is None or not row.is_usable:
-        raise ValueError("This verification link is invalid or has expired")
 
-    user = db.get(User, row.user_id) if row.user_id else None
-    if user is None:
-        raise ValueError("This verification link is no longer valid")
+    if row is None:
+        raise ValueError("This verification code is invalid or has expired")
 
-    row.used_at = datetime.now(timezone.utc)
-    db.flush()
-    return user
+    if row.attempts >= CODE_MAX_ATTEMPTS:
+        row.used_at = datetime.now(timezone.utc)
+        db.commit()
+        raise ValueError("This verification code is invalid or has expired")
+
+    if row.code_hash == hash_code(code) and row.is_usable:
+        owner = db.get(User, row.user_id) if row.user_id else None
+        if owner is None:
+            raise ValueError("This verification code is no longer valid")
+        row.used_at = datetime.now(timezone.utc)
+        db.flush()
+        return owner
+
+    if row.is_usable:
+        row.attempts += 1
+        if row.attempts >= CODE_MAX_ATTEMPTS:
+            row.used_at = datetime.now(timezone.utc)
+        db.commit()
+    raise ValueError("This verification code is invalid or has expired")
 
 
 def mark_verified(db: Session, user: User) -> None:
     """Stamp the address as proven. Idempotent.
 
-    Called both by the token path and by Google sign-in, which arrives with
+    Called both by the code path and by Google sign-in, which arrives with
     Google's own assertion that the address is verified.
     """
     if user.email_verified_at is None:

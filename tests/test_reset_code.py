@@ -1,14 +1,14 @@
-"""The numeric reset code alongside the reset link.
+"""The numeric reset code (links are gone).
 
-The deployed frontend collects a typed-in 6-digit code, so every reset email
-carries one in addition to the link. Both redeem the same row. These tests pin
+Every reset email carries one 6-digit code and nothing else. These tests pin
 the properties that make a 6-digit space safe: a peppered hash, a guess cap
 that burns the row, scoping to the account's email, and the same
-non-disclosure the link flow already has.
+non-disclosure the old flow had.
 """
 import re
 
 from app.models import PasswordResetToken
+from app.services import otp
 from app.services import reset_tokens
 
 
@@ -50,15 +50,16 @@ def _confirm_code(client, email, code, new_password="brandnewpass1"):
     })
 
 
-# ── The email carries both credentials ───────────────────────────────────────
+# ── The email carries only the code ──────────────────────────────────────────
 
 
-def test_the_email_contains_a_six_digit_code_and_the_link(client, smtp):
-    _register(client, "both@example.com")
-    _request(client, "both@example.com")
+def test_the_email_contains_a_six_digit_code_and_no_link(client, smtp):
+    _register(client, "codeonly@example.com")
+    _request(client, "codeonly@example.com")
     body = _text(_reset_mail(smtp))
     assert re.search(r"Your code: (\d{6})", body)
-    assert "password-reset?token=" in body
+    assert "password-reset?token=" not in body
+    assert "token=" not in body
 
 
 def test_the_code_is_hashed_with_a_pepper_not_stored_plain(
@@ -79,7 +80,7 @@ def test_the_code_is_hashed_with_a_pepper_not_stored_plain(
     row = db_session.query(PasswordResetToken).one()
     assert row.code_hash != code
     assert row.code_hash != hashlib.sha256(code.encode()).hexdigest()
-    assert row.code_hash == reset_tokens.hash_code(code)
+    assert row.code_hash == otp.hash_code(code)
     assert len(code) == 6 and code.isdigit()
 
 
@@ -93,7 +94,10 @@ def test_a_correct_code_resets_the_password(client, smtp):
 
     r = _confirm_code(client, "coder@example.com", code)
     assert r.status_code == 200, r.text
-    assert r.json() == {"message": "Password has been reset"}
+    assert r.json() == {
+        "message": "Password has been reset",
+        "next_step": "login",
+    }
 
     login = client.post("/v1/auth/login", json={
         "email": "coder@example.com", "password": "brandnewpass1",
@@ -103,9 +107,7 @@ def test_a_correct_code_resets_the_password(client, smtp):
 
 def test_a_code_with_a_leading_zero_survives_the_round_trip(client, smtp, monkeypatch):
     """Codes are strings end to end: int("042013") is 42013."""
-    import app.services.reset_tokens as rt
-
-    monkeypatch.setattr(rt, "_new_code", lambda: "042013")
+    monkeypatch.setattr(reset_tokens, "new_code", lambda: "042013")
     _register(client, "zero@example.com")
     _request(client, "zero@example.com")
     assert _code_from_mail(smtp) == "042013"
@@ -114,41 +116,20 @@ def test_a_code_with_a_leading_zero_survives_the_round_trip(client, smtp, monkey
     assert r.status_code == 200, r.text
 
 
-def test_using_the_code_spends_the_link_too(client, smtp):
-    """Both credentials redeem the same row: no live link left behind."""
-    _register(client, "spent@example.com")
-    _request(client, "spent@example.com")
-    body = _text(_reset_mail(smtp))
-    token = re.search(r"password-reset\?token=(\S+)", body).group(1)
+def test_a_used_code_cannot_be_replayed(client, smtp):
+    _register(client, "replay@example.com")
+    _request(client, "replay@example.com")
     code = _code_from_mail(smtp)
 
-    assert _confirm_code(client, "spent@example.com", code).status_code == 200
-
-    replay = client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "anotherpass1",
-    })
+    assert _confirm_code(client, "replay@example.com", code).status_code == 200
+    replay = _confirm_code(client, "replay@example.com", code,
+                           new_password="anotherpass1")
     assert replay.status_code == 401
 
 
-def test_using_the_link_spends_the_code_too(client, smtp):
-    _register(client, "spentlink@example.com")
-    _request(client, "spentlink@example.com")
-    body = _text(_reset_mail(smtp))
-    token = re.search(r"password-reset\?token=(\S+)", body).group(1)
-    code = _code_from_mail(smtp)
-
-    assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "brandnewpass1",
-    }).status_code == 200
-
-    assert _confirm_code(client, "spentlink@example.com", code).status_code == 401
-
-
 def test_a_new_request_kills_the_previous_code(client, smtp, monkeypatch):
-    import app.services.reset_tokens as rt
-
     codes = iter(["111111", "222222"])
-    monkeypatch.setattr(rt, "_new_code", lambda: next(codes))
+    monkeypatch.setattr(reset_tokens, "new_code", lambda: next(codes))
     _register(client, "twice@example.com")
     _request(client, "twice@example.com")
 
@@ -194,7 +175,7 @@ def test_ten_wrong_guesses_burn_the_row(client, smtp, db_session):
     code = _code_from_mail(smtp)
     wrong = "000000" if code != "000000" else "111111"
 
-    for _ in range(reset_tokens.CODE_MAX_ATTEMPTS):
+    for _ in range(otp.CODE_MAX_ATTEMPTS):
         assert _confirm_code(client, "burn@example.com", wrong).status_code == 401
 
     row = db_session.query(PasswordResetToken).one()
@@ -237,14 +218,6 @@ def test_a_code_for_one_account_does_not_reset_another(client, smtp):
 # ── Contract shape ───────────────────────────────────────────────────────────
 
 
-def test_token_and_code_are_mutually_exclusive(client):
-    r = client.post("/v1/auth/password-reset/confirm", json={
-        "token": "tln_abc", "email": "x@example.com", "code": "123456",
-        "new_password": "brandnewpass1",
-    })
-    assert r.status_code == 422
-
-
 def test_code_without_email_is_rejected(client):
     r = client.post("/v1/auth/password-reset/confirm", json={
         "code": "123456", "new_password": "brandnewpass1",
@@ -259,19 +232,6 @@ def test_email_without_code_is_rejected(client):
     assert r.status_code == 422
 
 
-def test_the_link_only_shape_still_validates(client, smtp):
-    """Existing clients posting {token, new_password} must keep working."""
-    _register(client, "legacy@example.com")
-    _request(client, "legacy@example.com")
-    body = _text(_reset_mail(smtp))
-    token = re.search(r"password-reset\?token=(\S+)", body).group(1)
-
-    r = client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "brandnewpass1",
-    })
-    assert r.status_code == 200
-
-
 def test_dev_inline_response_includes_the_code(client, smtp_off):
     _register(client, "devcode@example.com")
     r = client.post("/v1/auth/password-reset/request",
@@ -279,3 +239,4 @@ def test_dev_inline_response_includes_the_code(client, smtp_off):
     assert r.status_code == 200
     body = r.json()
     assert re.fullmatch(r"\d{6}", body["reset_code"])
+    assert "reset_token" not in body

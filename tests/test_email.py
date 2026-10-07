@@ -34,13 +34,13 @@ def _last_html(message) -> str:
 # ── Sending basics ───────────────────────────────────────────────────────────
 
 
-def _verification_token(message) -> str:
-    """Pull the token out of the emailed verification link."""
+def _verification_code(message) -> str:
+    """Pull the code out of the emailed verification message."""
     import re
 
     body = _last_text(message)
-    match = re.search(r"verify-email\?token=([^\s\"<]+)", body)
-    assert match, f"no verification link in the email: {body[:200]!r}"
+    match = re.search(r"Your code: (\d{6})", body)
+    assert match, f"no verification code in the email: {body[:200]!r}"
     return match.group(1)
 
 
@@ -66,12 +66,14 @@ def test_welcome_arrives_after_the_address_is_confirmed(client, smtp,
         "email": "newbie@example.com", "password": "password123",
         "learner_name": "Newbie",
     })
-    token = _verification_token(smtp.sent[0])
+    code = _verification_code(smtp.sent[0])
 
-    r = client.post("/v1/auth/email-verification/confirm",
-                    json={"token": token})
+    r = client.post("/v1/auth/otp/verify", json={
+        "email": "newbie@example.com", "code": code, "purpose": "signup",
+    })
     assert r.status_code == 200
     assert r.json()["email_verified"] is True
+    assert r.json()["next_step"] == "onboarding"
 
     assert len(smtp.sent) == 2
     assert smtp.sent[1]["Subject"] == "Welcome to Talyn"
@@ -221,38 +223,30 @@ def _register(client, email):
     })
 
 
-def test_reset_token_is_hashed_not_stored_plain(client, smtp, db_session):
-    """A database leak must not hand over working reset links."""
+def test_reset_code_is_hashed_not_stored_plain(client, smtp, db_session):
+    """A database leak must not hand over a working reset code."""
     _register(client, "hashme@example.com")
     assert client.post("/v1/auth/password-reset/request",
                        json={"email": "hashme@example.com"}).status_code == 200
 
-    raw = _reset_link_token(_reset_mail(smtp))
+    code = _reset_code(_reset_mail(smtp))
     row = db_session.query(PasswordResetToken).one()
-    assert row.token_hash != raw
-    assert row.token_hash == reset_tokens.hash_token(raw)
-
-
-def test_reset_link_points_at_a_real_frontend_route(client, smtp, monkeypatch):
-    """The emailed link must resolve to a page that exists in the web app."""
-    monkeypatch.setattr(config_module.settings, "frontend_url",
-                        "https://app.talyn.dev")
-    _register(client, "route@example.com")
-    client.post("/v1/auth/password-reset/request", json={"email": "route@example.com"})
-    link = _reset_link(_reset_mail(smtp))
-    assert link.startswith("https://app.talyn.dev/password-reset?token=")
+    assert row.code_hash != code
+    assert row.token_hash is None
 
 
 def test_reset_works_end_to_end(client, smtp):
-    """The token that was emailed is the token that works."""
+    """The code that was emailed is the code that works."""
     _register(client, "flow@example.com")
     client.post("/v1/auth/password-reset/request", json={"email": "flow@example.com"})
-    token = _reset_link_token(_reset_mail(smtp))
+    code = _reset_code(_reset_mail(smtp))
 
     ok = client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "brandnewpass1",
+        "email": "flow@example.com", "code": code,
+        "new_password": "brandnewpass1",
     })
     assert ok.status_code == 200
+    assert ok.json()["next_step"] == "login"
 
     assert client.post("/v1/auth/login", json={
         "email": "flow@example.com", "password": "brandnewpass1",
@@ -262,18 +256,20 @@ def test_reset_works_end_to_end(client, smtp):
     }).status_code == 401
 
 
-def test_reset_token_cannot_be_reused(client, smtp):
-    """The token that worked once must be dead immediately afterwards."""
+def test_reset_code_cannot_be_reused(client, smtp):
+    """The code that worked once must be dead immediately afterwards."""
     _register(client, "replay@example.com")
     client.post("/v1/auth/password-reset/request",
                 json={"email": "replay@example.com"})
-    token = _reset_link_token(_reset_mail(smtp))
+    code = _reset_code(_reset_mail(smtp))
 
     assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "firstnewpass1"}).status_code == 200
+        "email": "replay@example.com", "code": code,
+        "new_password": "firstnewpass1"}).status_code == 200
 
     replay = client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "attackerpass1",
+        "email": "replay@example.com", "code": code,
+        "new_password": "attackerpass1",
     })
     assert replay.status_code == 401
     # And the attacker's password did not take effect.
@@ -285,49 +281,55 @@ def test_reset_token_cannot_be_reused(client, smtp):
     }).status_code == 200
 
 
-def test_requesting_again_invalidates_the_first_token(client, smtp):
-    """A leaked older link stops working once the owner asks for a new one."""
+def test_requesting_again_invalidates_the_first_code(client, smtp, monkeypatch):
+    """A leaked older code stops working once the owner asks for a new one."""
+    from app.services import reset_tokens
+
+    codes = iter(["111111", "222222"])
+    monkeypatch.setattr(reset_tokens, "new_code", lambda: next(codes))
     _register(client, "superseded@example.com")
     client.post("/v1/auth/password-reset/request",
                 json={"email": "superseded@example.com"})
     client.post("/v1/auth/password-reset/request",
                 json={"email": "superseded@example.com"})
 
-    links = [_reset_link_token(m) for m in _reset_mails(smtp)]
-    assert len(links) == 2
-    first, second = links
-    assert first != second
+    assert _reset_code(_reset_mails(smtp)[1]) == "222222"
 
     assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": first, "new_password": "nope12345678"}).status_code == 401
+        "email": "superseded@example.com", "code": "111111",
+        "new_password": "nope12345678"}).status_code == 401
     assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": second, "new_password": "yes12345678"}).status_code == 200
+        "email": "superseded@example.com", "code": "222222",
+        "new_password": "yes12345678"}).status_code == 200
 
 
-def test_expired_token_is_rejected(client, smtp, db_session):
+def test_expired_code_is_rejected(client, smtp, db_session):
     _register(client, "stale@example.com")
     client.post("/v1/auth/password-reset/request", json={"email": "stale@example.com"})
-    token = _reset_link_token(_reset_mail(smtp))
+    code = _reset_code(_reset_mail(smtp))
     row = db_session.query(PasswordResetToken).one()
     row.expires_at = row.created_at  # already expired
     db_session.commit()
 
     assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "toolate123"}).status_code == 401
+        "email": "stale@example.com", "code": code,
+        "new_password": "toolate123"}).status_code == 401
 
 
-def test_unknown_token_is_rejected(client):
+def test_unknown_code_is_rejected(client):
     assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": "made-up-token", "new_password": "whatever123"}).status_code == 401
+        "email": "nobody@example.com", "code": "000000",
+        "new_password": "whatever123"}).status_code == 401
 
 
 def test_reset_applies_to_google_only_account(client, smtp):
     """Google users have an unguessable password hash; reset still applies."""
     _register(client, "hybrid@example.com")
     client.post("/v1/auth/password-reset/request", json={"email": "hybrid@example.com"})
-    token = _reset_link_token(_reset_mail(smtp))
+    code = _reset_code(_reset_mail(smtp))
     assert client.post("/v1/auth/password-reset/confirm", json={
-        "token": token, "new_password": "hybridpass12"}).status_code == 200
+        "email": "hybrid@example.com", "code": code,
+        "new_password": "hybridpass12"}).status_code == 200
     assert client.post("/v1/auth/login", json={
         "email": "hybrid@example.com", "password": "hybridpass12"}).status_code == 200
 
@@ -348,7 +350,8 @@ def test_dev_without_email_returns_token_inline(client, smtp_off):
     r = client.post("/v1/auth/password-reset/request",
                     json={"email": "devuser@example.com"})
     assert r.status_code == 200
-    assert r.json()["reset_token"]
+    assert _re.fullmatch(r"\d{6}", r.json()["reset_code"])
+    assert "reset_token" not in r.json()
 
 
 def test_reset_request_for_unknown_email_looks_identical(client, smtp):
@@ -370,7 +373,7 @@ def test_reset_email_contains_no_plain_password(client, smtp):
     client.post("/v1/auth/password-reset/request", json={"email": "leak@example.com"})
     body = _last_text(smtp.sent[-1])
     assert "leak12345" not in body  # the test password never appears
-    assert "token=" in body
+    assert _re.search(r"Your code: (\d{6})", body)
 
 
 # ── Receipts ─────────────────────────────────────────────────────────────────
@@ -438,15 +441,11 @@ def test_failed_receipt_does_not_undo_purchase(client, smtp, db_session):
 import re as _re
 
 
-def _reset_link(message) -> str:
+def _reset_code(message) -> str:
     body = _last_text(message)
-    match = _re.search(r"https?://\S*password-reset\?token=\S+", body)
-    assert match, f"no reset link in: {body[:300]}"
-    return match.group(0)
-
-
-def _reset_link_token(message) -> str:
-    return _reset_link(message).split("token=", 1)[1].strip()
+    match = _re.search(r"Your code: (\d{6})", body)
+    assert match, f"no reset code in: {body[:300]}"
+    return match.group(1)
 
 
 def _reset_mails(smtp) -> list[email.message.Message]:
@@ -532,10 +531,10 @@ def test_admin_email_log_is_admin_only(client, smtp):
 
 
 def test_email_log_never_exposes_message_bodies(client, admin_headers, smtp):
-    """A reset token must not be readable from the admin log."""
+    """A reset code must not be readable from the admin log."""
     _register(client, "secret@example.com")
     client.post("/v1/auth/password-reset/request",
                 json={"email": "secret@example.com"})
-    token = _reset_link_token(_reset_mail(smtp))
+    code = _reset_code(_reset_mail(smtp))
     body = client.get("/v1/admin/email-log", headers=admin_headers).text
-    assert token not in body
+    assert code not in body

@@ -33,21 +33,24 @@ def learner(client, smtp):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _token_from_email(smtp) -> str:
+def _code_from_email(smtp) -> str:
     body = ""
     for part in smtp.sent[-1].walk():
         if part.get_content_type() == "text/plain":
             body = part.get_payload(decode=True).decode("utf-8")
-    match = re.search(r"verify-email\?token=([^\s\"<]+)", body)
-    assert match, f"no verification link found in {body[:200]!r}"
+    match = re.search(r"Your code: (\d{6})", body)
+    assert match, f"no verification code found in {body[:200]!r}"
     return match.group(1)
 
 
 def _verify(client, smtp):
-    """Click the link, as the user would."""
-    token = _token_from_email(smtp)
-    r = client.post("/v1/auth/email-verification/confirm", json={"token": token})
+    """Enter the code, as the user would."""
+    code = _code_from_email(smtp)
+    r = client.post("/v1/auth/otp/verify", json={
+        "email": LEARNER["email"], "code": code, "purpose": "signup",
+    })
     assert r.status_code == 200, r.text
+    assert r.json()["next_step"] == "onboarding"
     return r
 
 
@@ -67,33 +70,44 @@ def test_confirming_marks_the_address_verified(client, learner, smtp):
     assert status["next_step"] == "choose_pace"
 
 
-def test_a_verification_link_cannot_be_replayed(client, learner, smtp):
-    """Single use, like a password reset: an attacker who later finds the link
+def test_a_verification_code_cannot_be_replayed(client, learner, smtp):
+    """Single use, like a password reset: an attacker who later finds the code
     in the mailbox must not be able to undo a confirmation."""
-    token = _token_from_email(smtp)
-    assert client.post("/v1/auth/email-verification/confirm",
-                       json={"token": token}).status_code == 200
-    assert client.post("/v1/auth/email-verification/confirm",
-                       json={"token": token}).status_code == 401
+    code = _code_from_email(smtp)
+    assert client.post("/v1/auth/otp/verify", json={
+        "email": LEARNER["email"], "code": code, "purpose": "signup",
+    }).status_code == 200
+    assert client.post("/v1/auth/otp/verify", json={
+        "email": LEARNER["email"], "code": code, "purpose": "signup",
+    }).status_code == 401
 
 
-def test_a_forged_token_is_refused(client, learner, smtp):
-    assert client.post("/v1/auth/email-verification/confirm",
-                       json={"token": "not-a-real-token-at-all"}).status_code == 401
+def test_a_forged_code_is_refused(client, learner, smtp):
+    assert client.post("/v1/auth/otp/verify", json={
+        "email": LEARNER["email"], "code": "000000", "purpose": "signup",
+    }).status_code == 401
 
 
-def test_requesting_a_new_link_invalidates_the_old_one(client, learner, smtp):
-    """Two live links would mean the one that leaked still works after the
+def test_requesting_a_new_code_invalidates_the_old_one(client, learner, smtp, monkeypatch):
+    """Two live codes would mean the one that leaked still works after the
     newer one has been used."""
-    first = _token_from_email(smtp)
-    client.post("/v1/auth/email-verification/request", json={"email": LEARNER["email"]})
-    second = _token_from_email(smtp)
-    assert first != second
+    from app.services import verification_tokens
 
-    assert client.post("/v1/auth/email-verification/confirm",
-                       json={"token": second}).status_code == 200
-    assert client.post("/v1/auth/email-verification/confirm",
-                       json={"token": first}).status_code == 401
+    codes = iter(["111111", "222222"])
+    monkeypatch.setattr(verification_tokens, "new_code", lambda: next(codes))
+    client.post("/v1/auth/email-verification/request", json={"email": LEARNER["email"]})
+    first = _code_from_email(smtp)
+    assert first == "111111"
+    client.post("/v1/auth/email-verification/request", json={"email": LEARNER["email"]})
+    second = _code_from_email(smtp)
+    assert second == "222222"
+
+    assert client.post("/v1/auth/otp/verify", json={
+        "email": LEARNER["email"], "code": second,
+        "purpose": "signup"}).status_code == 200
+    assert client.post("/v1/auth/otp/verify", json={
+        "email": LEARNER["email"], "code": first,
+        "purpose": "signup"}).status_code == 401
 
 
 def test_request_does_not_disclose_whether_an_account_exists(client, learner):

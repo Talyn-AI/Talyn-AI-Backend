@@ -22,6 +22,7 @@ def _migration_tables():
     paths = [
         "alembic/versions/d4c9a1e27f50_row_level_security.py",
         "alembic/versions/c7e15a93d204_rls_monetization_tables.py",
+        "alembic/versions/a2b74e91c083_rls_check_ins.py",
     ]
     tables: set[str] = set()
     for i, path in enumerate(paths):

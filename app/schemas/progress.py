@@ -1,8 +1,10 @@
 """Progress, quiz, XP, and learner-context schemas."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from app.schemas.learning_path import PathRead
 
 
 class QuizSubmit(BaseModel):
@@ -14,6 +16,19 @@ class QuizSubmit(BaseModel):
     # "quiz"). Without it the score is recorded but clears nothing, which is
     # the right behaviour for a standalone practice quiz.
     lesson_id: int | None = None
+
+
+class CourseQaIn(BaseModel):
+    course_id: int
+    lesson_id: int | None = None
+    question: str = Field(..., min_length=1, max_length=2000)
+
+
+class CourseQaOut(BaseModel):
+    answer: str
+    # Lesson titles the answer was drawn from, reported by the backend —
+    # never by the model, so a cited lesson always exists.
+    sources: list[str] = []
 
 
 class LessonCompleteRequest(BaseModel):
@@ -113,6 +128,52 @@ class BadgeRead(BaseModel):
     description: str
     icon: str | None = None
     earned_date: datetime
+
+
+class CheckInIn(BaseModel):
+    mood: str | None = Field(default=None, max_length=30)
+    note: str = Field(default="", max_length=500)
+
+
+class CheckInRead(BaseModel):
+    date: date
+    mood: str | None = None
+    note: str = ""
+    xp_awarded: int = 0
+
+
+class ActivityEntry(BaseModel):
+    activity: str
+    amount: int
+    note: str = ""
+    at: datetime
+
+
+class QuizSummary(BaseModel):
+    quizzes_taken: int = 0
+    average_score: float = 0.0
+    topics_attempted: int = 0
+
+
+class DashboardOut(BaseModel):
+    """Everything the learner Dashboard and Progress pages need in one call:
+    enrollments with progress ("my learning"), saved learning paths, XP and
+    streak, quiz summary, recent activity, recent check-ins, the study plan,
+    and where onboarding stands."""
+
+    enrollments: list[EnrollmentProgress] = []
+    learning_paths: list[PathRead] = []
+    xp_total: int = 0
+    xp_this_week: int = 0
+    level: int = 1
+    level_title: str = ""
+    streak_days: int = 0
+    quiz: QuizSummary = QuizSummary()
+    recent_activity: list[ActivityEntry] = []
+    checkins_last_7_days: list[date] = []
+    checked_in_today: bool = False
+    study_plan: StudyPlanRead | None = None
+    onboarding_next_step: str = "done"
 
 
 #: Activities awardable through the generic endpoint. lesson/quiz/mission

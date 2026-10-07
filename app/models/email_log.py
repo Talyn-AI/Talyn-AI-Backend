@@ -33,8 +33,10 @@ class PasswordResetToken(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     # sha256 of the raw token. A database leak must not hand over working
-    # reset links, so the plaintext never touches disk.
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # reset links, so the plaintext never touches disk. Nullable since codes
+    # replaced links: new rows carry only a code_hash.
+    token_hash: Mapped[str | None] = mapped_column(String(64), unique=True,
+                                                  nullable=True, index=True)
     # HMAC of the 6-digit code (see reset_tokens.hash_code). Deliberately not
     # unique: the code space is small enough that two live rows can share one,
     # so code redemption is always scoped to the account's email. Nullable for
@@ -69,8 +71,17 @@ class EmailVerificationToken(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     # sha256 of the raw token, for the same reason as reset tokens: a database
-    # leak must not hand over working verification links.
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # leak must not hand over working verification links. Nullable since codes
+    # replaced links: new rows carry only a code_hash.
+    token_hash: Mapped[str | None] = mapped_column(String(64), unique=True,
+                                                  nullable=True, index=True)
+    # HMAC of the 6-digit verification code (see services/otp.py). Not
+    # unique: the code space is small, so redemption is always scoped to the
+    # account's email. Nullable for rows written before codes existed.
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True,
+                                                  index=True)
+    # Failed code guesses; the row burns at the shared cap.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

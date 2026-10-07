@@ -1,7 +1,7 @@
 """Learning analytics models: quiz results, XP events, badges, study plans."""
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -74,3 +74,27 @@ class StudyPlan(Base):
     weekly_target_lessons: Mapped[int] = mapped_column(Integer, default=3)
     focus_topics: Mapped[str] = mapped_column(String(1000), default="[]")
     deadline: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+class CheckIn(Base):
+    """One daily check-in: the learner showed up. One row per learner per
+    day (unique), awarded XP once — so check-ins extend the XP streak the
+    same way studying does, instead of running a second streak system that
+    could disagree with the first."""
+
+    __tablename__ = "check_ins"
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "check_date", name="uq_check_ins_user_day"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    check_date: Mapped[date] = mapped_column(Date, index=True)
+    mood: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

@@ -12,6 +12,7 @@ from app.routers.onboarding import router as onboarding_router
 from app.routers.waitlist import router as waitlist_router
 from app.routers.learner_library import router as learner_library_router
 from app.routers.learning_paths import router as learning_paths_router
+from app.routers.checkins import router as checkins_router
 from app.routers.buddies import router as buddies_router
 from app.routers.admin import router as admin_router
 from app.routers.creators import router as creators_router
@@ -40,6 +41,7 @@ __all__ = [
     "waitlist_router",
     "learner_library_router",
     "learning_paths_router",
+    "checkins_router",
     "buddies_router",
     "admin_router",
     "creators_router",

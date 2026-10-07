@@ -83,6 +83,21 @@ def analyze_material(user_id: int, document_text: str, filename: str) -> dict:
     return data
 
 
+def ask_course_question(user_id: int, course_title: str, content: str,
+                        question: str) -> str:
+    """Grounded Q&A: the answer must come from the supplied lesson text."""
+    data = _post(
+        user_id,
+        "/coach/course-qa",
+        {"course_title": course_title, "content": content,
+         "question": question},
+        ANALYZE_TIMEOUT_SECONDS,
+    )
+    if not isinstance(data, dict) or not data.get("answer"):
+        raise CoachError("The answer came back empty. Please try again.")
+    return str(data["answer"])
+
+
 def generate_schedule(user_id: int, document_text: str, topics: list[str],
                       objectives: list[str], days: int,
                       difficulty: str, purpose: str = "") -> dict:

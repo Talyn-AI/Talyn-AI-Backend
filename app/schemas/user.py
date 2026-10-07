@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field
 
 Difficulty = Literal["beginner", "intermediate", "advanced"]
 
@@ -72,41 +72,13 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetConfirm(BaseModel):
-    """Set a new password with exactly one credential.
+    """Set a new password with a reset code. The code is a string, not a
+    number: int("042013") is 42013, and a credential that changes when
+    parsed is a support ticket."""
 
-    Either the long `token` from the emailed link, or the 6-digit `code`
-    plus the `email` it was sent to (the code space is small enough that a
-    bare code does not identify a row). The code is a string, not a number:
-    int("042013") is 42013, and a credential that changes when parsed is a
-    support ticket.
-    """
-
-    token: str | None = Field(
-        default=None,
-        description="Reset token from the emailed link (use either this or email + code)",
-    )
-    email: EmailStr | None = Field(
-        default=None,
-        description="Account email the code was sent to (required with code)",
-    )
-    code: str | None = Field(
-        default=None,
-        pattern=r"^\d{6}$",
-        description="6-digit code from the reset email (required with email)",
-    )
+    email: EmailStr
+    code: str = Field(..., pattern=r"^\d{6}$")
     new_password: str = Field(..., min_length=8)
-
-    @model_validator(mode="after")
-    def _one_credential(self):
-        has_link = self.token is not None
-        has_code = self.email is not None or self.code is not None
-        if has_link == has_code:
-            raise ValueError(
-                "Provide either 'token' or both 'email' and 'code'"
-            )
-        if has_code and (self.email is None or self.code is None):
-            raise ValueError("A reset code needs both 'email' and 'code'")
-        return self
 
 
 class GoogleAuthIn(BaseModel):

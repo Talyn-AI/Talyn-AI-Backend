@@ -97,12 +97,14 @@ def test_password_reset_flow(client, auth_headers):
         "/v1/auth/password-reset/request", json={"email": "zainab@example.com"}
     )
     assert r.status_code == 200
-    token = r.json()["reset_token"]
+    code = r.json()["reset_code"]
     r = client.post(
         "/v1/auth/password-reset/confirm",
-        json={"token": token, "new_password": "resetpass1"},
+        json={"email": "zainab@example.com", "code": code,
+              "new_password": "resetpass1"},
     )
     assert r.status_code == 200
+    assert r.json()["next_step"] == "login"
     assert client.post(
         "/v1/auth/login",
         json={"email": "zainab@example.com", "password": "resetpass1"},
@@ -114,14 +116,15 @@ def test_password_reset_unknown_email_same_shape(client):
         "/v1/auth/password-reset/request", json={"email": "ghost@example.com"}
     )
     assert r.status_code == 200
-    assert r.json() == {"message": "If the email exists, a reset link was sent"}
-    assert "reset_token" not in r.json()
+    assert r.json() == {"message": "If the email exists, a reset code was sent"}
+    assert "reset_code" not in r.json()
 
 
 def test_password_reset_bad_token(client):
     r = client.post(
         "/v1/auth/password-reset/confirm",
-        json={"token": "bogus", "new_password": "resetpass1"},
+        json={"email": "zainab@example.com", "code": "000000",
+              "new_password": "resetpass1"},
     )
     assert r.status_code == 401
 

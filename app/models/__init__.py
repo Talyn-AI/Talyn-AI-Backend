@@ -1,7 +1,7 @@
 """SQLAlchemy models for Talyn backend."""
 from app.models.user import User
 from app.models.course import Course, CourseModule, Enrollment, Lesson, LessonProgress
-from app.models.learning import Badge, QuizResult, StudyPlan, XpEvent
+from app.models.learning import Badge, CheckIn, QuizResult, StudyPlan, XpEvent
 from app.models.mission import (
     Mission,
     MissionStep,
@@ -38,6 +38,7 @@ __all__ = [
     "Lesson",
     "LessonProgress",
     "Badge",
+    "CheckIn",
     "QuizResult",
     "StudyPlan",
     "XpEvent",
