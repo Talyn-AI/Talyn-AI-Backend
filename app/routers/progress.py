@@ -872,6 +872,9 @@ def dashboard(
     ).all()
 
     payload = study_plan_payload(db, current_user)
+    plan = db.scalar(
+        select(StudyPlan).where(StudyPlan.user_id == current_user.id)
+    )
 
     return DashboardOut(
         enrollments=enrollments,

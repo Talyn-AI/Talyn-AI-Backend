@@ -165,3 +165,18 @@ def test_dashboard_for_a_brand_new_learner(client, learner_headers):
 
 def test_dashboard_needs_auth(client):
     assert client.get("/v1/me/dashboard").status_code == 401
+
+
+def test_dashboard_with_an_existing_study_plan(client, learner_headers):
+    """Regression: the plan branch references the row id, so a dashboard
+    without any plan row passed while production (which always has one
+    after onboarding) 500d with NameError."""
+    pid = client.put("/v1/me/study-plan", headers=learner_headers, json={
+        "daily_goal_minutes": 45, "weekly_target_lessons": 5,
+        "focus_topics": ["Design"], "deadline": None,
+    }).json()["id"]
+
+    body = client.get("/v1/me/dashboard", headers=learner_headers).json()
+    assert body["study_plan"]["id"] == pid
+    assert body["study_plan"]["daily_goal_minutes"] == 45
+    assert body["study_plan"]["focus_topics"] == ["Design"]
