@@ -85,7 +85,7 @@ def analyze_material(user_id: int, document_text: str, filename: str) -> dict:
 
 def generate_schedule(user_id: int, document_text: str, topics: list[str],
                       objectives: list[str], days: int,
-                      difficulty: str) -> dict:
+                      difficulty: str, purpose: str = "") -> dict:
     """Paid artifact: the full day-by-day plan. Returns the raw dict."""
     data = _post(
         user_id,
@@ -96,6 +96,7 @@ def generate_schedule(user_id: int, document_text: str, topics: list[str],
             "objectives": objectives,
             "days": days,
             "difficulty": difficulty,
+            "purpose": purpose,
         },
         SCHEDULE_TIMEOUT_SECONDS,
     )

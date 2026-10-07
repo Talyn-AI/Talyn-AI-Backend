@@ -71,7 +71,7 @@ button can be hidden before either is ever hit.
 
 ---
 
-124 endpoints across 20 areas.
+126 endpoints across 20 areas.
 
 ## Admin
 
@@ -2167,9 +2167,11 @@ Rename, re-describe, or replace the course list wholesale.
 | | `POST` | `/v1/me/materials` | 🔒 user | — |
 | | `POST` | `/v1/me/materials/presigned` | 🔒 user | — |
 | | `DELETE` | `/v1/me/materials/{material_id}` | 🔒 user | — |
+| | `GET` | `/v1/me/materials/{material_id}/analysis` | 🔒 user | — |
 | | `POST` | `/v1/me/materials/{material_id}/analyze` | 🔒 user | — |
 | | `POST` | `/v1/me/materials/{material_id}/days/{day_number}/complete` | 🔒 user | — |
 | | `GET` | `/v1/me/materials/{material_id}/payment` | 🔒 user | — |
+| | `POST` | `/v1/me/materials/{material_id}/plan` | 🔒 user | — |
 | | `POST` | `/v1/me/materials/{material_id}/purchase` | 🔒 user | — |
 | | `GET` | `/v1/me/materials/{material_id}/schedule` | 🔒 user | — |
 | | `POST` | `/v1/me/materials/{material_id}/verify` | 🔒 user | — |
@@ -2277,6 +2279,26 @@ object
 - **422** Validation Error
 
 
+### GET /v1/me/materials/{material_id}/analysis
+
+Re-read the preview (step 5 is a screen the learner returns to).
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `topics` | array of string | no | default `[]` |
+| `objectives` | array of string | no | default `[]` |
+| `estimated_minutes` | integer | no | default `0` |
+| `summary` | string | no | default `` |
+| `purpose` | string | no | default `` |
+| `timeline_days` | integer *(nullable)* | no | — |
+
+- **422** Validation Error
+
+
 ### POST /v1/me/materials/{material_id}/analyze
 
 Read the document and preview what it contains: topics, objectives,
@@ -2297,6 +2319,8 @@ Repeatable: a fresh analysis replaces the previous one.
 | `objectives` | array of string | no | default `[]` |
 | `estimated_minutes` | integer | no | default `0` |
 | `summary` | string | no | default `` |
+| `purpose` | string | no | default `` |
+| `timeline_days` | integer *(nullable)* | no | — |
 
 - **422** Validation Error
 
@@ -2330,6 +2354,37 @@ Current state of the unlock payment. The callback page polls this.
 | `status` | string | yes | — |
 | `unlocked` | boolean | yes | — |
 | `amount_naira` | integer | yes | — |
+
+- **422** Validation Error
+
+
+### POST /v1/me/materials/{material_id}/plan
+
+Steps 3+4 of the loop: purpose and timeline. Requires the analysis
+first — intent without a preview has nothing to attach to. Repeatable:
+changing your mind re-shapes the schedule generated later, not the
+preview itself.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `purpose` | string | yes | — |
+| `days` | integer | yes | — |
+
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `topics` | array of string | no | default `[]` |
+| `objectives` | array of string | no | default `[]` |
+| `estimated_minutes` | integer | no | default `0` |
+| `summary` | string | no | default `` |
+| `purpose` | string | no | default `` |
+| `timeline_days` | integer *(nullable)* | no | — |
 
 - **422** Validation Error
 
@@ -2376,6 +2431,7 @@ never gate it, so no expiry is checked here.
 | `id` | integer | yes | — |
 | `material_id` | integer | yes | — |
 | `title` | string | no | default `` |
+| `purpose` | string | no | default `` |
 | `days` | array of ScheduleDay | no | default `[]` |
 | `days_total` | integer | no | default `0` |
 | `days_completed` | integer | no | default `0` |

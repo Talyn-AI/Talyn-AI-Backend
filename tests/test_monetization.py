@@ -61,7 +61,7 @@ def coach(monkeypatch):
         "summary": "A short primer on photosynthesis.",
     })
 
-    def _schedule(uid, text, topics, objectives, days, difficulty):
+    def _schedule(uid, text, topics, objectives, days, difficulty, purpose=""):
         assert "Photosynthesis" in text
         return {
             "title": "Photosynthesis in 14 days",
@@ -98,6 +98,19 @@ def _upload(client, headers, s3, filename="primer.txt",
     })
     assert r.status_code == 201, r.text
     return r.json()["id"]
+
+
+def _analyze(client, headers, material_id):
+    r = client.post(f"/v1/me/materials/{material_id}/analyze", headers=headers)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _plan(client, headers, material_id, purpose="exam", days=14):
+    r = client.post(f"/v1/me/materials/{material_id}/plan", headers=headers,
+                    json={"purpose": purpose, "days": days})
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 @pytest.fixture
@@ -171,6 +184,7 @@ def test_stub_purchase_unlocks_inline(client, learner_headers, material_id,
                                       coach, db_session, smtp):
     client.post(f"/v1/me/materials/{material_id}/analyze",
                 headers=learner_headers)
+    _plan(client, learner_headers, material_id)
     r = client.post(f"/v1/me/materials/{material_id}/purchase",
                     headers=learner_headers)
     assert r.status_code == 200, r.text
@@ -189,6 +203,7 @@ def test_stub_purchase_unlocks_inline(client, learner_headers, material_id,
 def test_purchase_twice_is_409(client, learner_headers, material_id, coach):
     client.post(f"/v1/me/materials/{material_id}/analyze",
                 headers=learner_headers)
+    _plan(client, learner_headers, material_id)
     assert client.post(f"/v1/me/materials/{material_id}/purchase",
                        headers=learner_headers).status_code == 200
     r = client.post(f"/v1/me/materials/{material_id}/purchase",
@@ -200,6 +215,7 @@ def test_payment_status_tracks_the_flow(client, learner_headers, material_id,
                                         coach):
     client.post(f"/v1/me/materials/{material_id}/analyze",
                 headers=learner_headers)
+    _plan(client, learner_headers, material_id)
     assert client.get(f"/v1/me/materials/{material_id}/payment",
                       headers=learner_headers).status_code == 404
     client.post(f"/v1/me/materials/{material_id}/purchase",
@@ -226,6 +242,7 @@ def test_schedule_generates_once_paid(client, learner_headers, material_id,
                                       coach, db_session):
     client.post(f"/v1/me/materials/{material_id}/analyze",
                 headers=learner_headers)
+    _plan(client, learner_headers, material_id)
     client.post(f"/v1/me/materials/{material_id}/purchase",
                 headers=learner_headers)
 
@@ -248,6 +265,7 @@ def test_schedule_generates_once_paid(client, learner_headers, material_id,
 def test_complete_a_day(client, learner_headers, material_id, coach):
     client.post(f"/v1/me/materials/{material_id}/analyze",
                 headers=learner_headers)
+    _plan(client, learner_headers, material_id)
     client.post(f"/v1/me/materials/{material_id}/purchase",
                 headers=learner_headers)
     client.get(f"/v1/me/materials/{material_id}/schedule",
@@ -271,6 +289,7 @@ def test_complete_an_unknown_day_is_404(client, learner_headers, material_id,
                                         coach):
     client.post(f"/v1/me/materials/{material_id}/analyze",
                 headers=learner_headers)
+    _plan(client, learner_headers, material_id)
     client.post(f"/v1/me/materials/{material_id}/purchase",
                 headers=learner_headers)
     client.get(f"/v1/me/materials/{material_id}/schedule",
@@ -282,6 +301,88 @@ def test_complete_an_unknown_day_is_404(client, learner_headers, material_id,
 def test_schedule_is_per_learner(client, learner2, material_id, coach):
     assert client.get(f"/v1/me/materials/{material_id}/schedule",
                       headers=learner2).status_code == 404
+
+
+# ── Purpose and timeline ───────────────────────────────────────────────────────
+
+
+def test_plan_records_intent_and_reads_back(client, learner_headers,
+                                           material_id, coach):
+    _analyze(client, learner_headers, material_id)
+    body = _plan(client, learner_headers, material_id,
+                 purpose="final exam", days=2)
+    assert body["purpose"] == "final exam"
+    assert body["timeline_days"] == 2
+    assert body["topics"] == ["Photosynthesis", "Chlorophyll"]
+
+    reread = client.get(f"/v1/me/materials/{material_id}/analysis",
+                        headers=learner_headers).json()
+    assert reread["purpose"] == "final exam"
+    assert reread["timeline_days"] == 2
+
+
+def test_plan_needs_an_analysis_first(client, learner_headers, material_id):
+    r = client.post(f"/v1/me/materials/{material_id}/plan",
+                    headers=learner_headers,
+                    json={"purpose": "exam", "days": 7})
+    assert r.status_code == 409
+
+
+def test_plan_validates_its_inputs(client, learner_headers, material_id, coach):
+    _analyze(client, learner_headers, material_id)
+    base = f"/v1/me/materials/{material_id}/plan"
+    assert client.post(base, headers=learner_headers,
+                       json={"purpose": "", "days": 7}).status_code == 422
+    assert client.post(base, headers=learner_headers,
+                       json={"purpose": "exam", "days": 0}).status_code == 422
+    assert client.post(base, headers=learner_headers,
+                       json={"purpose": "exam", "days": 31}).status_code == 422
+    assert client.post(base, headers=learner_headers,
+                       json={"purpose": "x" * 101, "days": 7}).status_code == 422
+
+
+def test_purchase_needs_a_plan_not_just_an_analysis(client, learner_headers,
+                                                    material_id, coach):
+    _analyze(client, learner_headers, material_id)
+    r = client.post(f"/v1/me/materials/{material_id}/purchase",
+                    headers=learner_headers)
+    assert r.status_code == 409
+    assert "purpose and timeline" in r.json()["detail"]
+
+
+def test_reanalyze_preserves_intent(client, learner_headers, material_id,
+                                    coach, db_session):
+    _analyze(client, learner_headers, material_id)
+    _plan(client, learner_headers, material_id, purpose="interview", days=5)
+    _analyze(client, learner_headers, material_id)
+
+    analysis = db_session.query(MaterialAnalysis).one()
+    assert analysis.purpose == "interview"
+    assert analysis.timeline_days == 5
+
+
+def test_schedule_honours_a_two_day_timeline(client, learner_headers,
+                                             material_id, coach):
+    _analyze(client, learner_headers, material_id)
+    _plan(client, learner_headers, material_id, purpose="exam in 2 days",
+          days=2)
+    client.post(f"/v1/me/materials/{material_id}/purchase",
+                headers=learner_headers)
+    body = client.get(f"/v1/me/materials/{material_id}/schedule",
+                      headers=learner_headers).json()
+    assert body["days_total"] == 2
+    assert [d["day"] for d in body["days"]] == [1, 2]
+    assert body["purpose"] == "exam in 2 days"
+
+
+def test_changing_the_plan_before_purchase_reshapes(client, learner_headers,
+                                                   material_id, coach):
+    _analyze(client, learner_headers, material_id)
+    _plan(client, learner_headers, material_id, purpose="exam", days=14)
+    body = _plan(client, learner_headers, material_id, purpose="interview",
+                 days=7)
+    assert body["purpose"] == "interview"
+    assert body["timeline_days"] == 7
 
 
 # ── Settlement ───────────────────────────────────────────────────────────────

@@ -98,6 +98,7 @@ from app.schemas.study_schedule import (
     AnalysisRead,
     PathCheckout,
     PathPaymentStatus,
+    PlanIn,
     ScheduleDayRead,
     ScheduleRead,
 )
@@ -218,6 +219,7 @@ __all__ = [
     "AnalysisRead",
     "PathCheckout",
     "PathPaymentStatus",
+    "PlanIn",
     "ScheduleDayRead",
     "ScheduleRead",
     "AssetIn",

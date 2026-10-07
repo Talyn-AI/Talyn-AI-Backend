@@ -37,6 +37,11 @@ class MaterialAnalysis(Base):
     objectives: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=0)
     summary: Mapped[str] = mapped_column(Text, default="")
+    # Learner intent, chosen after the preview: why this document, and in
+    # how many days. Generation reads both. NULL timeline means "not
+    # chosen" — deliberately not defaulted, so skipping the step is visible.
+    purpose: Mapped[str] = mapped_column(String(100), default="")
+    timeline_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -58,6 +63,8 @@ class StudySchedule(Base):
         unique=True,
     )
     title: Mapped[str] = mapped_column(String(255), default="")
+    # Echoed from the analysis at generation time: why this plan exists.
+    purpose: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

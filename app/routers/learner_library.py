@@ -33,6 +33,7 @@ from app.schemas import (
     MaterialRead,
     PathCheckout,
     PathPaymentStatus,
+    PlanIn,
     PresignOut,
     ScheduleDayRead,
     ScheduleRead,
@@ -288,12 +289,64 @@ def analyze_material(
     analysis.summary = str(data.get("summary", ""))[:2000]
     db.commit()
     db.refresh(analysis)
+    return _read_analysis(analysis)
+
+
+def _read_analysis(analysis: MaterialAnalysis) -> AnalysisRead:
     return AnalysisRead(
         topics=list(analysis.topics or []),
         objectives=list(analysis.objectives or []),
         estimated_minutes=analysis.estimated_minutes,
         summary=analysis.summary,
+        purpose=analysis.purpose,
+        timeline_days=analysis.timeline_days,
     )
+
+
+@router.get("/{material_id}/analysis", response_model=AnalysisRead)
+def get_analysis(
+    material_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AnalysisRead:
+    """Re-read the preview (step 5 is a screen the learner returns to)."""
+    material = _owned_material(db, current_user, material_id)
+    analysis = db.scalar(
+        select(MaterialAnalysis).where(
+            MaterialAnalysis.material_id == material.id
+        )
+    )
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Not analyzed yet")
+    return _read_analysis(analysis)
+
+
+@router.post("/{material_id}/plan", response_model=AnalysisRead)
+def set_plan(
+    material_id: int,
+    payload: PlanIn,
+    current_user: User = Depends(require_onboarding),
+    db: Session = Depends(get_db),
+) -> AnalysisRead:
+    """Steps 3+4 of the loop: purpose and timeline. Requires the analysis
+    first — intent without a preview has nothing to attach to. Repeatable:
+    changing your mind re-shapes the schedule generated later, not the
+    preview itself."""
+    material = _owned_material(db, current_user, material_id)
+    analysis = db.scalar(
+        select(MaterialAnalysis).where(
+            MaterialAnalysis.material_id == material.id
+        )
+    )
+    if analysis is None:
+        raise HTTPException(
+            status_code=409, detail="Analyze your document first"
+        )
+    analysis.purpose = payload.purpose.strip()
+    analysis.timeline_days = payload.days
+    db.commit()
+    db.refresh(analysis)
+    return _read_analysis(analysis)
 
 
 # ── Purchase (the paywall) ───────────────────────────────────────────────────
@@ -327,6 +380,11 @@ def purchase_schedule(
     if analysis is None:
         raise HTTPException(
             status_code=409, detail="Analyze your document first"
+        )
+    if not analysis.purpose or not analysis.timeline_days:
+        raise HTTPException(
+            status_code=409,
+            detail="Choose a purpose and timeline first",
         )
 
     price = _path_price()
@@ -516,6 +574,7 @@ def _read_schedule(db: Session, schedule: StudySchedule) -> ScheduleRead:
         id=schedule.id,
         material_id=schedule.material_id,
         title=schedule.title,
+        purpose=schedule.purpose,
         days=[
             ScheduleDayRead(
                 day=d.day_number,
@@ -538,21 +597,25 @@ def _generate_schedule(
     db: Session, user: User, material: LearnerMaterial,
     analysis: MaterialAnalysis,
 ) -> StudySchedule:
-    """Build and store the 14-day plan. The AI call happens before any
-    write, so a failed generation leaves no partial schedule behind."""
+    """Build and store the plan for the learner's own timeline. The AI call
+    happens before any write, so a failed generation leaves no partial
+    schedule behind."""
     text = _material_text(material)
+    days = analysis.timeline_days or SCHEDULE_DAYS
     data = _coach_result(
         coach_client.generate_schedule,
         user.id, text,
         list(analysis.topics or []),
         list(analysis.objectives or []),
-        SCHEDULE_DAYS,
+        days,
         user.difficulty_level,
+        analysis.purpose,
     )
     schedule = StudySchedule(
         user_id=user.id,
         material_id=material.id,
         title=str(data.get("title", "") or f"Study schedule")[:255],
+        purpose=analysis.purpose,
     )
     db.add(schedule)
     db.flush()
@@ -561,7 +624,7 @@ def _generate_schedule(
         raise HTTPException(
             status_code=502, detail="The schedule came back empty."
         )
-    for n, raw in enumerate(raw_days[:SCHEDULE_DAYS], start=1):
+    for n, raw in enumerate(raw_days[:days], start=1):
         if not isinstance(raw, dict):
             continue
         db.add(ScheduleDay(
