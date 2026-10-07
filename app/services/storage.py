@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from app.config import settings
 
-PURPOSES = ("thumbnail", "video", "resource", "profile_image")
+PURPOSES = ("thumbnail", "video", "resource", "profile_image", "material")
 
 ALLOWED_CONTENT_TYPES = {
     "thumbnail": {"image/png", "image/jpeg", "image/webp"},
@@ -31,6 +31,18 @@ ALLOWED_CONTENT_TYPES = {
         "text/plain",
     },
     "profile_image": {"image/png", "image/jpeg", "image/webp"},
+    # Learner library documents. Slides included: readings and decks are what
+    # "course materials" mostly are. Video stays creator-only for now — a
+    # 512 MB cap per learner upload is a cost decision, not a type decision.
+    "material": {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/zip",
+        "text/plain",
+    },
 }
 
 # Extensions, matched against the client-supplied filename.
@@ -45,6 +57,7 @@ ALLOWED_EXTENSIONS = {
     "video": {".mp4", ".webm", ".mov"},
     "resource": {".pdf", ".doc", ".docx", ".zip", ".txt"},
     "profile_image": {".png", ".jpg", ".jpeg", ".webp"},
+    "material": {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".zip", ".txt"},
 }
 
 UPLOAD_EXPIRY_SECONDS = 900  # 15 minutes to upload
@@ -257,7 +270,7 @@ def list_keys(prefix: str) -> list[str]:
     return keys
 
 
-_KEY_RE = re.compile(r"^(thumbnail|video|resource|profile_image)/[0-9a-f]{32}-")
+_KEY_RE = re.compile(r"^(thumbnail|video|resource|profile_image|material)/[0-9a-f]{32}-")
 
 
 def is_server_generated(key: str) -> bool:

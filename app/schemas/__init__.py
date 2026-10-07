@@ -88,7 +88,15 @@ from app.schemas.analytics import (
     QuizTopicStats,
 )
 from app.schemas.creator import CreatorDashboard, CreatorProfileIn, CreatorProfileRead
-from app.schemas.asset import AssetIn, AssetRead, PresignIn
+from app.schemas.asset import (
+    AssetIn,
+    AssetRead,
+    MaterialClaimIn,
+    MaterialPresignIn,
+    MaterialRead,
+    PresignIn,
+    PresignOut,
+)
 from app.schemas.purchase import (
     CheckoutSession,
     PaymentRead,
@@ -192,7 +200,11 @@ __all__ = [
     "CreatorProfileRead",
     "AssetIn",
     "AssetRead",
+    "MaterialClaimIn",
+    "MaterialPresignIn",
+    "MaterialRead",
     "PresignIn",
+    "PresignOut",
     "CheckoutSession",
     "PaymentRead",
     "PaymentStatusRead",

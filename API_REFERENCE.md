@@ -71,7 +71,7 @@ button can be hidden before either is ever hit.
 
 ---
 
-109 endpoints across 18 areas.
+113 endpoints across 19 areas.
 
 ## Admin
 
@@ -1973,6 +1973,118 @@ object
 - **422** Validation Error
 
 
+## Library
+
+| | Method | Path | Auth | Wired |
+|---|---|---|---|---|
+| | `GET` | `/v1/me/materials` | 🔒 user | — |
+| | `POST` | `/v1/me/materials` | 🔒 user | — |
+| | `POST` | `/v1/me/materials/presigned` | 🔒 user | — |
+| | `DELETE` | `/v1/me/materials/{material_id}` | 🔒 user | — |
+
+### GET /v1/me/materials
+
+The learner's own library, newest first.
+
+**Responses**
+
+**200**
+
+array of objects
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `filename` | string | no | default `` |
+| `storage_key` | string | no | default `` |
+| `content_type` | string | no | default `` |
+| `size_bytes` | integer | no | default `0` |
+| `scan_status` | string | no | default `unscanned` |
+| `scan_detail` | string | no | default `` |
+
+
+### POST /v1/me/materials
+
+Claim a finished upload into the library.
+
+`claim` enforces the purpose prefix, so a key minted for any other use
+cannot end up here. Claiming is what stops the orphan sweep from deleting
+the object as abandoned.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `storage_key` | string | yes | — |
+
+
+**Responses**
+
+**201**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `filename` | string | no | default `` |
+| `storage_key` | string | no | default `` |
+| `content_type` | string | no | default `` |
+| `size_bytes` | integer | no | default `0` |
+| `scan_status` | string | no | default `unscanned` |
+| `scan_detail` | string | no | default `` |
+
+- **422** Validation Error
+
+
+### POST /v1/me/materials/presigned
+
+Mint a presigned upload form for one library document.
+
+Same guarantees as the creator form: the server chooses the key and the
+provider enforces the size cap, so a client holding this URL cannot exceed
+it.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `filename` | string | yes | — |
+| `content_type` | string | yes | — |
+| `size_bytes` | integer | no | default `0` |
+
+
+**Responses**
+
+**201**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `upload_url` | string | yes | — |
+| `fields` | object | yes | — |
+| `storage_key` | string | yes | — |
+| `expires_in` | integer | yes | — |
+| `max_bytes` | integer | yes | — |
+| `method` | string | no | default `POST` |
+
+- **422** Validation Error
+
+
+### DELETE /v1/me/materials/{material_id}
+
+Remove a library entry. 404 for anyone else's: the existence of
+another learner's files is not something to confirm.
+
+Object cleanup in storage is out of scope, matching lesson assets — the
+orphan sweep collects the unreferenced key within a day.
+
+**Responses**
+
+**200**
+
+object
+
+- **422** Validation Error
+
+
 ## Live
 
 | | Method | Path | Auth | Wired |
@@ -3146,7 +3258,8 @@ authority, and the payment must belong to the signed-in learner.
 Resolve a storage key to a presigned download URL.
 
 Public when the key belongs to a published course (thumbnail/assets)
-or a creator profile image; otherwise owner/admin only.
+or a creator profile image; otherwise owner/admin only. Learner library
+files are never public: the owner or an admin, and nobody else.
 
 **Responses**
 

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.deps import can_manage_course, can_read_content, optional_user, require_creator
 from app.database import get_db
-from app.models import Course, CreatorProfile, Lesson, LessonAsset, User
+from app.models import Course, CreatorProfile, Lesson, LessonAsset, LearnerMaterial, User
 from app.models.analytics import CONTENT_UPLOADED
 from app.models.asset import ASSET_KINDS, KIND_LINK
 from app.models.course import STATUS_PUBLISHED
@@ -196,7 +196,8 @@ def file_url(
     """Resolve a storage key to a presigned download URL.
 
     Public when the key belongs to a published course (thumbnail/assets)
-    or a creator profile image; otherwise owner/admin only.
+    or a creator profile image; otherwise owner/admin only. Learner library
+    files are never public: the owner or an admin, and nobody else.
     """
     public = False
     course = db.scalar(select(Course).where(Course.thumbnail_key == key))
@@ -208,6 +209,15 @@ def file_url(
             select(CreatorProfile).where(CreatorProfile.image_key == key)
         )
         if profile is not None:
+            return _presigned(key)
+        material = db.scalar(
+            select(LearnerMaterial).where(LearnerMaterial.storage_key == key)
+        )
+        if material is not None:
+            if viewer is None:
+                raise HTTPException(status_code=401, detail="Not authenticated")
+            if not (viewer.is_admin or material.user_id == viewer.id):
+                raise HTTPException(status_code=403, detail="Not your file")
             return _presigned(key)
         asset = db.scalar(
             select(LessonAsset).where(LessonAsset.storage_key == key)

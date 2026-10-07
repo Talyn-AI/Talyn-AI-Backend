@@ -22,7 +22,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
-from app.models import Course, CreatorProfile, LessonAsset
+from app.models import Course, CreatorProfile, LearnerMaterial, LessonAsset
 from app.services import storage
 
 BUCKETS = ("thumbnail", "video", "resource", "profile_image")
@@ -50,6 +50,13 @@ def referenced_keys(db) -> set[str]:
     keys.update(
         db.scalars(
             select(LessonAsset.storage_key).where(LessonAsset.storage_key.isnot(None))
+        )
+    )
+    keys.update(
+        db.scalars(
+            select(LearnerMaterial.storage_key).where(
+                LearnerMaterial.storage_key.isnot(None)
+            )
         )
     )
     return {k for k in keys if k}

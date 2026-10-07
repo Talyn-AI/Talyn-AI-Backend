@@ -67,11 +67,16 @@ class Settings(BaseSettings):
     # Per-purpose upload ceilings in bytes. Enforced by the storage provider
     # on a presigned POST (content-length-range), not by the client, so a
     # direct PUT cannot exceed them. Defaults: 5 MB thumbnails, 512 MB
-    # video, 100 MB resources, 2 MB profile images.
+    # video, 100 MB resources, 2 MB profile images, 100 MB learner materials.
     max_thumbnail_bytes: int = 5 * 1024 * 1024
     max_video_bytes: int = 512 * 1024 * 1024
     max_resource_bytes: int = 100 * 1024 * 1024
     max_profile_image_bytes: int = 2 * 1024 * 1024
+    max_material_bytes: int = 100 * 1024 * 1024
+    # Total library storage per learner. Without this one learner can fill
+    # the bucket 100 MB at a time; R2 is cheap per gigabyte but unbounded is
+    # unbounded. Study documents are small, so 1 GB is generous.
+    max_learner_library_bytes: int = 1024 * 1024 * 1024
 
     # How long an uploaded-but-never-attached object survives before the
     # orphan sweep deletes it. Without this, every abandoned presign leaks
@@ -139,6 +144,7 @@ class Settings(BaseSettings):
             "video": self.max_video_bytes,
             "resource": self.max_resource_bytes,
             "profile_image": self.max_profile_image_bytes,
+            "material": self.max_material_bytes,
         }.get(purpose, self.max_resource_bytes)
 
     @property
