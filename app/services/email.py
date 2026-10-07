@@ -196,24 +196,41 @@ def welcome_email(name: str) -> tuple[str, str, str]:
     return subject, html, text
 
 
-def password_reset_email(reset_link: str) -> tuple[str, str, str]:
+def password_reset_email(reset_link: str, code: str) -> tuple[str, str, str]:
+    """Reset email carrying both credentials for the same row.
+
+    The code is the headline: the deployed frontend collects a typed-in code.
+    The link stays as the alternative — it opens the same reset page with the
+    token already filled, so nobody has to type anything. Either one spends
+    the row, so there is never a live credential left behind after the other
+    is used.
+    """
     minutes = 15
     subject = "Reset your Talyn password"
     html = _layout(
         "Reset your password",
-        f"Use the button below to choose a new password. The link works once "
-        f"and expires in {minutes} minutes.",
-        [_note(
-            "If you did not ask for this, ignore this email. Your password "
-            "stays as it is."
-        )],
+        f"Enter this code to choose a new password. It works once and "
+        f"expires in {minutes} minutes.",
+        [
+            _para(f"<strong>Your code: {code}</strong>"),
+            _note(
+                "Prefer not to type? Use the button below instead — it opens "
+                "the same reset page with everything already filled in."
+            ),
+        ],
         cta_label="Choose a new password",
         cta_url=reset_link,
+        footnote=(
+            "If you did not ask for this, ignore this email. Your password "
+            "stays as it is."
+        ),
     )
     text = (
         "Reset your Talyn password\n\n"
-        f"Open this link to choose a new password. It works once and expires "
-        f"in {minutes} minutes:\n\n{reset_link}\n\n"
+        f"Your code: {code}\n\n"
+        f"Enter it to choose a new password. It works once and expires in "
+        f"{minutes} minutes.\n\n"
+        f"Prefer not to type? Open this link instead:\n\n{reset_link}\n\n"
         "If you did not ask for this, ignore this email — your password "
         "stays as it is."
     )
@@ -429,9 +446,11 @@ def send_or_raise(
         raise EmailError("Email could not be sent")
 
 
-def send_password_reset_email(to_email: str, reset_link: str) -> None:
+def send_password_reset_email(
+    to_email: str, reset_link: str, code: str = ""
+) -> None:
     """Backwards-compatible wrapper kept for existing callers."""
-    subject, html_body, text_body = password_reset_email(reset_link)
+    subject, html_body, text_body = password_reset_email(reset_link, code)
     if not is_configured():
         raise EmailError(
             "Email is not configured (RESEND_API_KEY or SMTP_HOST)")

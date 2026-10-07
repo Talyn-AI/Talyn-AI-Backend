@@ -185,7 +185,7 @@ def test_send_or_raise_raises_on_resend_failure(resend, db_session):
     with pytest.raises(email_service.EmailError):
         email_service.send_or_raise(
             db_session, to_email="a@example.com", template="password_reset",
-            message=email_service.password_reset_email("https://x/reset"),
+            message=email_service.password_reset_email("https://x/reset", "042013"),
         )
 
 

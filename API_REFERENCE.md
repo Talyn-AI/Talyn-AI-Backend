@@ -315,17 +315,20 @@ Authenticate and receive a JWT bearer token.
 
 ### POST /v1/auth/password-reset/confirm
 
-Set a new password using a reset link.
+Set a new password using a reset link or a reset code.
 
-The token is spent in the same transaction as the password change, so a
-link that worked once cannot work again — including if someone replays it
-after the legitimate owner has already reset.
+The credential is spent in the same transaction as the password change,
+so one that worked once cannot work again — including if someone replays
+it after the legitimate owner has already reset. Both credentials redeem
+the same row, so using either spends both.
 
 **Request body**
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `token` | string | yes | — |
+| `token` | string *(nullable)* | no | Reset token from the emailed link (use either this or email + code) |
+| `email` | string (email) *(nullable)* | no | Account email the code was sent to (required with code) |
+| `code` | string *(nullable)* | no | 6-digit code from the reset email (required with email) |
 | `new_password` | string | yes | — |
 
 
@@ -342,10 +345,10 @@ object
 
 Start a password reset.
 
-Production: the reset link is emailed; the token never appears in the
-response. If email is not configured outside dev, this fails closed
-(503) instead of leaking the token.
-Dev (no SMTP configured): the token is returned inline with a warning.
+Production: the reset link and code are emailed; neither ever appears in
+the response. If email is not configured outside dev, this fails closed
+(503) instead of leaking them.
+Dev (no SMTP configured): both are returned inline with a warning.
 The response shape is identical whether or not the email exists, so this
 endpoint cannot be used to discover which addresses are registered.
 

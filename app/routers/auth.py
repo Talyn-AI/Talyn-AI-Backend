@@ -172,10 +172,10 @@ def request_password_reset(
 ) -> dict:
     """Start a password reset.
 
-    Production: the reset link is emailed; the token never appears in the
-    response. If email is not configured outside dev, this fails closed
-    (503) instead of leaking the token.
-    Dev (no SMTP configured): the token is returned inline with a warning.
+    Production: the reset link and code are emailed; neither ever appears in
+    the response. If email is not configured outside dev, this fails closed
+    (503) instead of leaking them.
+    Dev (no SMTP configured): both are returned inline with a warning.
     The response shape is identical whether or not the email exists, so this
     endpoint cannot be used to discover which addresses are registered.
     """
@@ -189,7 +189,7 @@ def request_password_reset(
     if user is None:
         return {"message": RESET_REQUEST_MESSAGE}
 
-    raw, _row = reset_tokens.issue(db, user)
+    raw, code, _row = reset_tokens.issue(db, user)
     # Path matches the deployed frontend's route. It was /reset-password, which
     # that app has never had — every reset link was a 404.
     reset_link = f"{config_module.settings.frontend_url}/password-reset?token={raw}"
@@ -200,7 +200,7 @@ def request_password_reset(
                 db,
                 to_email=payload.email,
                 template=email_service.TEMPLATE_PASSWORD_RESET,
-                message=email_service.password_reset_email(reset_link),
+                message=email_service.password_reset_email(reset_link, code),
                 user_id=user.id,
             )
         except email_service.EmailError as e:
@@ -221,6 +221,7 @@ def request_password_reset(
     return {
         "message": "If the email exists, a reset token was issued",
         "reset_token": raw,
+        "reset_code": code,
         "warning": "DEV-ONLY: token returned inline; email it in production",
     }
 
@@ -323,16 +324,22 @@ def confirm_email_verification(
 def confirm_password_reset(
     payload: PasswordResetConfirm, db: Session = Depends(get_db)
 ) -> dict:
-    """Set a new password using a reset link.
+    """Set a new password using a reset link or a reset code.
 
-    The token is spent in the same transaction as the password change, so a
-    link that worked once cannot work again — including if someone replays it
-    after the legitimate owner has already reset.
+    The credential is spent in the same transaction as the password change,
+    so one that worked once cannot work again — including if someone replays
+    it after the legitimate owner has already reset. Both credentials redeem
+    the same row, so using either spends both.
     """
     from app.services import reset_tokens
 
     try:
-        user = reset_tokens.redeem(db, payload.token)
+        if payload.token is not None:
+            user = reset_tokens.redeem(db, payload.token)
+        else:
+            user = reset_tokens.redeem_code(
+                db, str(payload.email), str(payload.code)
+            )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)

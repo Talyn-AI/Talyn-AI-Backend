@@ -340,6 +340,7 @@ def test_reset_fails_closed_in_prod_without_email(client, smtp_off, monkeypatch)
                     json={"email": "produser@example.com"})
     assert r.status_code == 503
     assert "reset_token" not in r.json()
+    assert "reset_code" not in r.json()
 
 
 def test_dev_without_email_returns_token_inline(client, smtp_off):

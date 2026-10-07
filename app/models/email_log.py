@@ -12,7 +12,7 @@ news" is not a monitoring strategy.
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -35,6 +35,14 @@ class PasswordResetToken(Base):
     # sha256 of the raw token. A database leak must not hand over working
     # reset links, so the plaintext never touches disk.
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # HMAC of the 6-digit code (see reset_tokens.hash_code). Deliberately not
+    # unique: the code space is small enough that two live rows can share one,
+    # so code redemption is always scoped to the account's email. Nullable for
+    # rows written before codes existed.
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Failed code guesses. The row burns at the cap, which is what makes a
+    # 6-digit code brute-force resistant rather than merely rate-limited.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
