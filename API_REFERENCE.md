@@ -71,7 +71,7 @@ button can be hidden before either is ever hit.
 
 ---
 
-113 endpoints across 19 areas.
+118 endpoints across 20 areas.
 
 ## Admin
 
@@ -1969,6 +1969,192 @@ Detach an asset from a lesson (object cleanup in S3 is out of scope).
 **200**
 
 object
+
+- **422** Validation Error
+
+
+## Learning Paths
+
+| | Method | Path | Auth | Wired |
+|---|---|---|---|---|
+| | `GET` | `/v1/me/paths` | 🔒 user | — |
+| | `POST` | `/v1/me/paths` | 🔒 user | — |
+| | `DELETE` | `/v1/me/paths/{path_id}` | 🔒 user | — |
+| | `GET` | `/v1/me/paths/{path_id}` | 🔒 user | — |
+| | `PUT` | `/v1/me/paths/{path_id}` | 🔒 user | — |
+
+### GET /v1/me/paths
+
+The learner's own paths, newest first, each with progress.
+
+**Responses**
+
+**200**
+
+array of objects
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | no | default `` |
+| `steps` | array of PathStep | no | default `[]` |
+| `courses_total` | integer | no | default `0` |
+| `courses_completed` | integer | no | default `0` |
+| `completion_percent` | number | no | default `0.0` |
+| `created_at` | string (date-time) *(nullable)* | no | — |
+| `updated_at` | string (date-time) *(nullable)* | no | — |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `position` | integer | yes | — |
+| `course_id` | integer | yes | — |
+| `title` | string | yes | — |
+| `difficulty_level` | string | no | default `` |
+| `lessons_total` | integer | no | default `0` |
+| `status` | string (one of `completed`, `in_progress`, `not_started`) | yes | — |
+
+</details>
+
+
+### POST /v1/me/paths
+
+Save an ordered path over published courses.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `title` | string | yes | — |
+| `description` | string | no | default `` |
+| `course_ids` | array of integer | yes | — |
+
+
+**Responses**
+
+**201**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | no | default `` |
+| `steps` | array of PathStep | no | default `[]` |
+| `courses_total` | integer | no | default `0` |
+| `courses_completed` | integer | no | default `0` |
+| `completion_percent` | number | no | default `0.0` |
+| `created_at` | string (date-time) *(nullable)* | no | — |
+| `updated_at` | string (date-time) *(nullable)* | no | — |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `position` | integer | yes | — |
+| `course_id` | integer | yes | — |
+| `title` | string | yes | — |
+| `difficulty_level` | string | no | default `` |
+| `lessons_total` | integer | no | default `0` |
+| `status` | string (one of `completed`, `in_progress`, `not_started`) | yes | — |
+
+</details>
+
+- **422** Validation Error
+
+
+### DELETE /v1/me/paths/{path_id}
+
+Delete a path. Steps go with it through the CASCADE; enrollments and
+progress are untouched — a plan is not the work.
+
+**Responses**
+
+**200**
+
+object
+
+- **422** Validation Error
+
+
+### GET /v1/me/paths/{path_id}
+
+One path with per-step status.
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | no | default `` |
+| `steps` | array of PathStep | no | default `[]` |
+| `courses_total` | integer | no | default `0` |
+| `courses_completed` | integer | no | default `0` |
+| `completion_percent` | number | no | default `0.0` |
+| `created_at` | string (date-time) *(nullable)* | no | — |
+| `updated_at` | string (date-time) *(nullable)* | no | — |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `position` | integer | yes | — |
+| `course_id` | integer | yes | — |
+| `title` | string | yes | — |
+| `difficulty_level` | string | no | default `` |
+| `lessons_total` | integer | no | default `0` |
+| `status` | string (one of `completed`, `in_progress`, `not_started`) | yes | — |
+
+</details>
+
+- **422** Validation Error
+
+
+### PUT /v1/me/paths/{path_id}
+
+Rename, re-describe, or replace the course list wholesale.
+
+**Request body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `title` | string *(nullable)* | no | — |
+| `description` | string *(nullable)* | no | — |
+| `course_ids` | array of integer *(nullable)* | no | — |
+
+
+**Responses**
+
+**200**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | integer | yes | — |
+| `title` | string | yes | — |
+| `description` | string | no | default `` |
+| `steps` | array of PathStep | no | default `[]` |
+| `courses_total` | integer | no | default `0` |
+| `courses_completed` | integer | no | default `0` |
+| `completion_percent` | number | no | default `0.0` |
+| `created_at` | string (date-time) *(nullable)* | no | — |
+| `updated_at` | string (date-time) *(nullable)* | no | — |
+
+<details><summary><code>steps</code> object</summary>
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `position` | integer | yes | — |
+| `course_id` | integer | yes | — |
+| `title` | string | yes | — |
+| `difficulty_level` | string | no | default `` |
+| `lessons_total` | integer | no | default `0` |
+| `status` | string (one of `completed`, `in_progress`, `not_started`) | yes | — |
+
+</details>
 
 - **422** Validation Error
 

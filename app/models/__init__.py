@@ -19,6 +19,7 @@ from app.models.email_log import (
 from app.models.creator import CreatorProfile
 from app.models.asset import LessonAsset
 from app.models.learner_material import LearnerMaterial
+from app.models.learning_path import LearningPath, LearningPathStep
 from app.models.payment import Payment
 from app.models.analytics import AnalyticsEvent
 from app.models.social import CommunityPost, CommunityReply, DirectMessage, LiveSession
@@ -48,6 +49,8 @@ __all__ = [
     "CreatorProfile",
     "LessonAsset",
     "LearnerMaterial",
+    "LearningPath",
+    "LearningPathStep",
     "Payment",
     "AnalyticsEvent",
     "CommunityPost",

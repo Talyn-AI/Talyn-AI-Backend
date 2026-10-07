@@ -88,6 +88,12 @@ from app.schemas.analytics import (
     QuizTopicStats,
 )
 from app.schemas.creator import CreatorDashboard, CreatorProfileIn, CreatorProfileRead
+from app.schemas.learning_path import (
+    PathCreateIn,
+    PathRead,
+    PathStepRead,
+    PathUpdateIn,
+)
 from app.schemas.asset import (
     AssetIn,
     AssetRead,
@@ -198,6 +204,10 @@ __all__ = [
     "CreatorDashboard",
     "CreatorProfileIn",
     "CreatorProfileRead",
+    "PathCreateIn",
+    "PathRead",
+    "PathStepRead",
+    "PathUpdateIn",
     "AssetIn",
     "AssetRead",
     "MaterialClaimIn",
