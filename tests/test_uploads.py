@@ -56,19 +56,18 @@ def lesson_id(client, creator_headers, course_id):
 def storage_mock(monkeypatch):
     """Pretend S3 exists.
 
-    Uploads are now a presigned POST (not a PUT URL) and attaching a file
-    reads the real size back from storage, so the fake has to answer head
+    Uploads are presigned PUT URLs and attaching a file reads the real size
+    back from storage, so the fake has to answer both URL minting and head
     requests for the keys these tests attach.
     """
     monkeypatch.setattr(
         storage_module, "presigned_upload",
         lambda key, content_type, max_bytes: {
-            "upload_url": f"https://s3.test/{key}",
-            "fields": {"key": key, "policy": "signed"},
+            "upload_url": f"https://s3.test/{key}?sig=put",
             "storage_key": key,
             "expires_in": 900,
             "max_bytes": max_bytes,
-            "method": "POST",
+            "method": "PUT",
         },
     )
     monkeypatch.setattr(
@@ -98,10 +97,11 @@ def test_presign_flow(client, creator_headers, storage_mock):
     body = r.json()
     assert body["storage_key"].startswith("video/")
     assert body["upload_url"].startswith("https://s3.test/video/")
-    # A POST form, not a bare PUT URL: this is what carries the size cap.
-    assert body["method"] == "POST"
+    # A PUT URL, not a POST form (R2 does not implement POST Object):
+    # the size cap travels as max_bytes and is enforced at verify time.
+    assert body["method"] == "PUT"
     assert body["max_bytes"] > 0
-    assert "policy" in body["fields"]
+    assert "fields" not in body
 
 
 def test_presign_rejects_bad_purpose_and_type(client, creator_headers,

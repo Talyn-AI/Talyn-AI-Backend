@@ -7,12 +7,14 @@ it.
 
 The flow, and what each step is defending against:
 
-  1. `presign`  — validates the declared type and extension, then mints a
-     presigned POST carrying a `content-length-range`. The provider enforces
-     the cap, so an over-sized upload is refused by storage itself.
-  2. `verify`   — asks the provider for the real `ContentLength`. The
-     recorded size is what landed, not what was claimed. A client that lies
-     about a 10 KB file being 10 MB gets the truth recorded.
+  1. `presign`  - validates the declared type and extension, then mints a
+      presigned PUT URL. R2 does not implement POST Object, so no policy
+      can enforce the cap at upload time; it travels alongside as
+      `max_bytes` for the client to pre-check, honestly advisory.
+  2. `verify`   - asks the provider for the real `ContentLength`. The
+      recorded size is what landed, not what was claimed, and over-sized
+      objects are deleted here: this step, not the upload, is what makes
+      the cap real.
   3. `scan`     — ClamAV verdict, if a scanner is configured. Infected files
      are deleted from storage and refused.
   4. `attach`   — links the verified object to a lesson.

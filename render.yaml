@@ -74,7 +74,7 @@ services:
         sync: false
       # Blank on purpose, and it must stay blank. The app's default is
       # AES256, which is right for AWS S3 and wrong for Cloudflare R2: R2
-      # rejects a presigned POST carrying x-amz-server-side-encryption, so
+      # rejects an upload carrying x-amz-server-side-encryption, so
       # the default fails every upload. R2 encrypts at rest anyway, so there
       # is nothing to gain by sending it. Pinned here rather than set in the
       # dashboard, so a Blueprint sync cannot quietly restore the default.

@@ -270,9 +270,10 @@ Run through this before pointing real learners at the box.
       limit, multiplying the effective limit by the replica count
 - [ ] `ANTHROPIC_API_KEY` set (otherwise learners get canned replies)
 - [ ] Upload caps sized for your plan (`MAX_VIDEO_BYTES` etc.) and S3
-      server-side encryption on. The cap is enforced by a
-      `content-length-range` in the presigned POST policy, so it holds even
-      against a client that ignores the UI
+      server-side encryption on. The cap is enforced at claim time against
+      the real object size (a presigned PUT URL cannot carry a cap — R2
+      does not implement POST Object), so oversized uploads are deleted,
+      not attached
 - [ ] `scripts/cleanup_orphans` scheduled — abandoned uploads are invisible
       in the app and cost storage forever
 - [ ] ClamAV wired up (`CLAMAV_HOST`) or a conscious decision that uploads

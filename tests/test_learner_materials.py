@@ -18,20 +18,18 @@ class FakeS3:
         self.objects: dict = {}
         self.deleted: list[str] = []
 
-    def generate_presigned_post(self, Bucket, Key, Conditions, Fields=None,
-                                ExpiresIn=None):
-        return {
-            "url": f"https://{Bucket}.s3.test/{Key}",
-            "fields": {"key": Key, "policy": "signed", **(Fields or {})},
-        }
+    def generate_presigned_post(self, *a, **k):
+        raise NotImplementedError(
+            "R2 does not implement POST Object; the app mints PUT URLs")
 
     def head_object(self, Bucket, Key):
         if Key not in self.objects:
             raise RuntimeError("404 Not Found")
         return self.objects[Key]
 
-    def generate_presigned_url(self, *a, **k):
-        return "https://s3.test/download?signature=fake"
+    def generate_presigned_url(self, op, Params=None, ExpiresIn=None):
+        key = (Params or {}).get("Key", "")
+        return f"https://talyn-test.s3.test/{key}?sig={op}"
 
     def delete_object(self, Bucket, Key):
         self.deleted.append(Key)

@@ -161,7 +161,7 @@ open with a logged warning so a cache blip never takes the API down).
 | `POST` | `/v1/courses/{id}/unpublish` | Back to draft | creator(owner) |
 | `POST` | `/v1/courses/{id}/archive` | Archive course | creator(owner) |
 | `GET`  | `/v1/courses/{id}/preview` | Student-view preview (drafts OK) | creator(owner) |
-| `POST` | `/v1/uploads/presigned` | Mint an S3 upload form (server key, size-capped) | creator |
+| `POST` | `/v1/uploads/presigned` | Mint an upload URL (server key, size-capped) | creator |
 | `POST` | `/v1/lessons/{id}/assets` | Attach video/resource/link (verifies size, scans) | creator(owner) |
 | `GET`  | `/v1/lessons/{id}/assets` | List assets (paid gated) | no* |
 | `DELETE` | `/v1/lessons/{id}/assets/{aid}` | Detach an asset | creator(owner) |
@@ -345,14 +345,16 @@ S3_REGION=us-east-1
 For local development, `moto` emulates S3 (`python -m moto.server -p 5000`,
 bucket `talyn-dev`, endpoint `http://localhost:5000`).
 
-Browser uploads go directly to the bucket via a presigned **POST** form, so
-the bucket needs a CORS policy allowing `POST` and `GET` from the app
-origin:
+Browser uploads go directly to the bucket via a presigned **PUT** URL
+(R2 does not implement POST Object, so multipart form uploads are
+rejected no matter how correct the policy is), so the bucket needs a CORS
+policy allowing `PUT` and `GET` from the app origin. The uploader must send
+exactly the declared `Content-Type` — it is part of the signature:
 
 ```json
 [{ "AllowedOrigins": ["https://app.yourdomain.com"],
-   "AllowedMethods": ["POST", "GET", "HEAD"],
-   "AllowedHeaders": ["*"],
+   "AllowedMethods": ["PUT", "GET", "HEAD"],
+   "AllowedHeaders": ["Content-Type"],
    "ExposeHeaders": ["ETag"] }]
 ```
 
@@ -362,22 +364,22 @@ AES256) and set a lifecycle rule that expires anything under `video/` and
 
 ### Upload hardening
 
-Uploads used to be a presigned PUT, which has two problems worth stating
-plainly:
+Uploads go through a presigned PUT URL, which has two limitations worth
+stating plainly (R2 leaves no alternative — it does not implement POST
+Object, so a policy-enforced form is not an option):
 
 - **A presigned PUT cannot cap size.** Whoever holds the URL can send as much
-  as they like and storage pays for it.
+  as they like.
 - **`size_bytes` on an asset was whatever the client claimed**, so it was
   never evidence of anything.
 
-What replaced it:
+What compensates:
 
 | Concern | How it is handled |
 |---------|-------------------|
-| Size | A `content-length-range` in the presigned POST policy, enforced by the storage provider before it accepts a byte. Not a client promise. |
-| Size (defence in depth) | On attach, the real `ContentLength` is read back. Over the cap means something bypassed the form, so the object is deleted and refused. |
+| Size | The real `ContentLength` is read back at claim/attach time. Over the cap means the uploader exceeded it, so the object is deleted and refused. The cap is the server's — enforced late, but enforced. |
 | Recorded size | `size_bytes` is now the provider's number. `AssetIn` no longer accepts a client-supplied size at all. |
-| File type | Content-Type **and** extension are both checked. Content-Type is client-chosen, so `.exe` is refused even when the header claims `video/mp4`. |
+| File type | Content-Type **and** extension are both checked. Content-Type is client-chosen, so `.exe` is refused even when the header claims `video/mp4`. The declared Content-Type is also part of the PUT signature. |
 | Malware | Optional ClamAV scan on attach. Infected files are deleted from storage and refused. |
 | Storage at rest | Server-side encryption on every object. |
 | Abandoned files | `scripts/cleanup_orphans.py` deletes objects nothing references. |
@@ -455,10 +457,10 @@ readable timestamp are kept rather than assumed old. Run it daily from cron:
 | `PAYSTACK_API_URL` | *(empty = Paystack)* | Override for a self-hosted provider mock |
 | `PAYMENT_RETURN_URL` | *(empty = `FRONTEND_URL`)* | Origin Paystack redirects the learner back to |
 | `ALLOW_STUB_PAYMENTS` | `false` | Lets a non-dev environment boot with the money-free stub |
-| `MAX_THUMBNAIL_BYTES` | `5242880` (5 MB) | Ceiling enforced by the presigned POST policy |
-| `MAX_VIDEO_BYTES` | `536870912` (512 MB) | Ceiling enforced by the presigned POST policy |
-| `MAX_RESOURCE_BYTES` | `104857600` (100 MB) | Ceiling enforced by the presigned POST policy |
-| `MAX_PROFILE_IMAGE_BYTES` | `2097152` (2 MB) | Ceiling enforced by the presigned POST policy |
+| `MAX_THUMBNAIL_BYTES` | `5242880` (5 MB) | Per-file ceiling, pre-checked client-side and enforced at claim time against the real object |
+| `MAX_VIDEO_BYTES` | `536870912` (512 MB) | Per-file ceiling, pre-checked client-side and enforced at claim time against the real object |
+| `MAX_RESOURCE_BYTES` | `104857600` (100 MB) | Per-file ceiling, pre-checked client-side and enforced at claim time against the real object |
+| `MAX_PROFILE_IMAGE_BYTES` | `2097152` (2 MB) | Per-file ceiling, pre-checked client-side and enforced at claim time against the real object |
 | `S3_SERVER_SIDE_ENCRYPTION` | `AES256` | Applied to every uploaded object |
 | `ORPHAN_UPLOAD_TTL_HOURS` | `24` | Age at which unattached objects are swept |
 | `CLAMAV_HOST` | *(empty = scanning off)* | ClamAV host; enables malware scanning |

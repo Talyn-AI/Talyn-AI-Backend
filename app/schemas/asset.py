@@ -14,19 +14,20 @@ class PresignIn(BaseModel):
 
 
 class PresignOut(BaseModel):
-    """What the client needs to POST a file to storage directly.
+    """What the client needs to PUT a file to storage directly.
 
-    ``max_bytes`` is advisory — the provider enforces the same limit in the
-    form's policy — but sending it lets the UI reject an oversized file
-    instantly instead of after a long upload that was always going to fail.
+    ``max_bytes`` is advisory — a PUT URL cannot enforce it, so the client
+    should reject an oversized file instantly instead of uploading bytes
+    that verify() will delete anyway. Send exactly the declared
+    Content-Type header: it is part of the signature, and anything else
+    fails with SignatureDoesNotMatch.
     """
 
     upload_url: str
-    fields: dict[str, str]
     storage_key: str
     expires_in: int
     max_bytes: int
-    method: str = "POST"
+    method: str = "PUT"
 
 
 class AssetIn(BaseModel):

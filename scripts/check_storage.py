@@ -80,25 +80,40 @@ def main() -> int:
         print(f"  read back                    FAILED: {exc}")
         failures.append("head_object")
 
-    # 3. The presigned POST. This is the one that matters most: browsers post
-    #    straight to the provider, so a policy the backend can satisfy may
-    #    still be rejected by the browser. Printing the host and fields makes
-    #    an obvious mismatch (wrong endpoint, missing CORS) visible by eye.
+    # 3. The presigned PUT browsers use. Unlike the boto write above, this
+    #    goes out with no credentials — exactly like the frontend — so it
+    #    catches bad signing credentials that presigning alone never reveals
+    #    (minting is offline math). The Origin header checks the bucket CORS
+    #    policy the same way a browser would: no ACAO echo, no browser
+    #    uploads, no matter what the backend returns.
     try:
+        import httpx
+
         form = presigned_upload(key, "text/plain", max_bytes=1024)
-        print("\n  presigned POST               OK")
+        print("\n  presigned PUT                OK")
         _line("  host", form["upload_url"].split("?")[0])
-        for name in sorted(form["fields"]):
-            if name in ("key", "policy", "x-amz-signature"):
-                continue
-            value = form["fields"][name]
-            print(f"    field {name:<18} {value}")
-        if settings.s3_server_side_encryption and not any(
-            k.lower() == "x-amz-server-side-encryption" for k in form["fields"]
-        ):
-            failures.append("presigned POST is missing the SSE header")
+        _line("  method", form["method"])
+        origin = (settings.frontend_url or "").rstrip("/")
+        put = httpx.put(
+            form["upload_url"], content=CONTENT,
+            headers={"Content-Type": "text/plain", "Origin": origin},
+            timeout=30,
+        )
+        if put.status_code not in (200, 201, 204):
+            raise StorageError(
+                f"PUT through the presigned URL failed: "
+                f"HTTP {put.status_code} {put.text[:200]}"
+            )
+        print("  PUT through presigned URL    OK")
+        allow_origin = put.headers.get("access-control-allow-origin", "")
+        _line("  ACAO echo", allow_origin or "(missing!)")
+        if origin not in (allow_origin, "*"):
+            failures.append(
+                f"bucket CORS policy does not allow Origin {origin} — "
+                "browser uploads will fail"
+            )
     except StorageError as exc:
-        print(f"\n  presigned POST               FAILED: {exc}")
+        print(f"\n  presigned PUT                FAILED: {exc}")
         failures.append("presigned_upload")
 
     # 4. Clean up. A leftover key here is harmless (it is not server-generated

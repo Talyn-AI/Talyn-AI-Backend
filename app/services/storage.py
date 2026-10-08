@@ -4,19 +4,19 @@ Server-generated keys only — clients never choose paths. Reads go through
 presigned URLs so the bucket can stay private. boto3 is imported lazily so
 the app boots without credentials; calls fail closed when unconfigured.
 
-Uploads use **presigned POST**, not PUT, and that is the whole point.
-A presigned PUT cannot constrain size: whoever holds the URL can send as
-much as they like and storage pays for it. A presigned POST carries a
-`content-length-range` policy that the storage provider enforces before
-accepting a byte, so the size cap is the server's, not the client's
-promise.
+Uploads use **presigned PUT URLs**, not POST forms, because Cloudflare R2
+does not implement POST Object (multipart form uploads): a signed policy
+form is rejected no matter how correct it is. The trade is real and
+accepted openly: a PUT URL cannot carry a `content-length-range`, so the
+per-purpose cap is advisory at upload time. The enforcement that matters
+lives in `uploads.verify()` / `claim()`, which read the real size back
+from the provider and delete over-sized objects. Nothing oversized can be
+*attached*, whatever the uploader sends.
 """
 from __future__ import annotations
 
 import re
 from uuid import uuid4
-
-from app.config import settings
 
 PURPOSES = ("thumbnail", "video", "resource", "profile_image", "material")
 
@@ -146,52 +146,47 @@ def build_key(purpose: str, filename: str) -> str:
 def presigned_upload(
     key: str, content_type: str, max_bytes: int
 ) -> dict:
-    """Presigned POST form + key. Raises StorageError when unconfigured.
+    """Presigned PUT URL + key. Raises StorageError when unconfigured.
 
-    `max_bytes` becomes a `content-length-range` in the form's policy, which
-    the provider enforces. Passing 0 would mean "unbounded", so the floor is
-    1 byte — a caller that wants no cap has to say so by not using this.
+    `max_bytes` is advisory here — a PUT URL cannot enforce a size cap the
+    way a POST policy could, and R2 does not implement POST Object at all.
+    The cap is enforced for real afterwards: verify()/claim() read the
+    landed size from the provider and delete anything over it, so an
+    over-sized upload can exist briefly but can never be attached.
+
+    `content_type` is part of the signature: the uploader must send exactly
+    this Content-Type header or R2 answers 403 SignatureDoesNotMatch.
+    Server-side encryption headers are not signed (R2 encrypts at rest
+    anyway, and S3_SERVER_SIDE_ENCRYPTION is pinned empty for R2).
     """
     client, bucket = _client()
     if max_bytes <= 0:
         raise StorageError("Upload size limit must be positive")
 
-    conditions: list = [
-        {"bucket": bucket},
-        ["starts-with", "$key", key],
-        ["content-length-range", 1, int(max_bytes)],
-    ]
-    extra: dict = {"Content-Type": content_type}
-    if settings.s3_server_side_encryption:
-        conditions.append({"sseCustomerAlgorithm": settings.s3_server_side_encryption})
-        extra["x-amz-server-side-encryption"] = settings.s3_server_side_encryption
-
     try:
-        # botocore capitalises these: Fields, Conditions, ExpiresIn. Unlike
+        # botocore capitalises these: Params, ExpiresIn. Unlike
         # generate_presigned_url (Params=), a lowercase name is a TypeError
         # rather than a warning, so it has to be right.
-        post = client.generate_presigned_post(
-            Bucket=bucket,
-            Key=key,
-            Conditions=conditions,
-            Fields=extra,
+        url = client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": key,
+                    "ContentType": content_type},
             ExpiresIn=UPLOAD_EXPIRY_SECONDS,
         )
     except TypeError as e:
         # A boto3 signature change or a typo here would otherwise surface as
         # an opaque failure on every upload in production.
-        raise StorageError(f"Could not create upload form: {e}") from e
+        raise StorageError(f"Could not create upload URL: {e}") from e
     except Exception as e:
-        raise StorageError(f"Could not create upload form: {e}") from e
+        raise StorageError(f"Could not create upload URL: {e}") from e
 
     return {
-        "upload_url": post["url"],
-        "fields": post["fields"],
+        "upload_url": url,
         "storage_key": key,
         "expires_in": UPLOAD_EXPIRY_SECONDS,
         "max_bytes": int(max_bytes),
         # Told to the client for a friendly pre-check, not as enforcement.
-        "method": "POST",
+        "method": "PUT",
     }
 
 

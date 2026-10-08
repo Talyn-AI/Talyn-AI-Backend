@@ -38,11 +38,11 @@ def presigned_upload(
     creator: User = Depends(require_creator),
     db: Session = Depends(get_db),
 ) -> PresignOut:
-    """Mint a presigned upload form. Server chooses the key; clients POST there.
+    """Mint a presigned PUT URL. Server chooses the key; clients PUT there.
 
-    The form carries a content-length-range, so the storage provider enforces
-    the size cap — a client holding this URL cannot exceed it. The declared
-    size is checked here too, purely to fail fast with a clear message.
+    The declared size is checked here too, purely to fail fast with a clear
+    message. The provider cannot enforce the cap on a PUT URL, so verify()
+    reads the real size back afterwards and deletes anything over it.
     """
     limit = settings.max_upload_bytes(payload.purpose)
     if payload.size_bytes and payload.size_bytes > limit:

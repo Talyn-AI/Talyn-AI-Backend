@@ -64,10 +64,12 @@ class Settings(BaseSettings):
     # possible mitigation for "user files pile up".
     s3_server_side_encryption: str = "AES256"
 
-    # Per-purpose upload ceilings in bytes. Enforced by the storage provider
-    # on a presigned POST (content-length-range), not by the client, so a
-    # direct PUT cannot exceed them. Defaults: 5 MB thumbnails, 512 MB
-    # video, 100 MB resources, 2 MB profile images, 100 MB learner materials.
+    # Per-purpose upload ceilings in bytes. The client pre-checks against
+    # them, and verify()/claim() enforce them against the real object —
+    # a presigned PUT URL cannot carry a provider-enforced cap (R2 does not
+    # implement POST Object), so a direct PUT is bounded only afterwards.
+    # Defaults: 5 MB thumbnails, 512 MB video, 100 MB resources,
+    # 2 MB profile images, 100 MB learner materials.
     max_thumbnail_bytes: int = 5 * 1024 * 1024
     max_video_bytes: int = 512 * 1024 * 1024
     max_resource_bytes: int = 100 * 1024 * 1024

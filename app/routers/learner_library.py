@@ -104,11 +104,11 @@ def presigned_material_upload(
     current_user: User = Depends(require_onboarding),
     db: Session = Depends(get_db),
 ) -> PresignOut:
-    """Mint a presigned upload form for one library document.
+    """Mint a presigned PUT URL for one library document.
 
-    Same guarantees as the creator form: the server chooses the key and the
-    provider enforces the size cap, so a client holding this URL cannot exceed
-    it.
+    Same guarantees as the creator URL: the server chooses the key, and the
+    uploader must send exactly the declared Content-Type. The size cap is
+    advisory at upload time; claim() enforces it against the real object.
     """
     limit = settings.max_upload_bytes(MATERIAL_PURPOSE)
     if payload.size_bytes and payload.size_bytes > limit:

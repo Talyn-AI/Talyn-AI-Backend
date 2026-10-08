@@ -2245,11 +2245,11 @@ the object as abandoned.
 
 ### POST /v1/me/materials/presigned
 
-Mint a presigned upload form for one library document.
+Mint a presigned PUT URL for one library document.
 
-Same guarantees as the creator form: the server chooses the key and the
-provider enforces the size cap, so a client holding this URL cannot exceed
-it.
+Same guarantees as the creator URL: the server chooses the key, and the
+uploader must send exactly the declared Content-Type. The size cap is
+advisory at upload time; claim() enforces it against the real object.
 
 **Request body**
 
@@ -2267,11 +2267,10 @@ it.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `upload_url` | string | yes | — |
-| `fields` | object | yes | — |
 | `storage_key` | string | yes | — |
 | `expires_in` | integer | yes | — |
 | `max_bytes` | integer | yes | — |
-| `method` | string | no | default `POST` |
+| `method` | string | no | default `PUT` |
 
 - **422** Validation Error
 
@@ -3840,11 +3839,11 @@ object
 
 ### POST /v1/uploads/presigned
 
-Mint a presigned upload form. Server chooses the key; clients POST there.
+Mint a presigned PUT URL. Server chooses the key; clients PUT there.
 
-The form carries a content-length-range, so the storage provider enforces
-the size cap — a client holding this URL cannot exceed it. The declared
-size is checked here too, purely to fail fast with a clear message.
+The declared size is checked here too, purely to fail fast with a clear
+message. The provider cannot enforce the cap on a PUT URL, so verify()
+reads the real size back afterwards and deletes anything over it.
 
 **Request body**
 
@@ -3863,11 +3862,10 @@ size is checked here too, purely to fail fast with a clear message.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `upload_url` | string | yes | — |
-| `fields` | object | yes | — |
 | `storage_key` | string | yes | — |
 | `expires_in` | integer | yes | — |
 | `max_bytes` | integer | yes | — |
-| `method` | string | no | default `POST` |
+| `method` | string | no | default `PUT` |
 
 - **422** Validation Error
 

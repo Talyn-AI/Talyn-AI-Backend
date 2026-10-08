@@ -24,16 +24,13 @@ class FakeS3:
 
     def __init__(self):
         self.objects: dict = {}       # key -> {ContentLength, ContentType, Body}
-        self.post_conditions: list = []
+        self.put_params: list = []
         self.deleted: list[str] = []
 
-    def generate_presigned_post(self, Bucket, Key, Conditions, Fields=None,
-                                ExpiresIn=None):
-        self.post_conditions = Conditions
-        return {
-            "url": f"https://{Bucket}.s3.test/{Key}",
-            "fields": {"key": Key, "policy": "signed", **(Fields or {})},
-        }
+    def generate_presigned_url(self, op, Params=None, ExpiresIn=None):
+        self.put_params.append((op, Params))
+        key = (Params or {}).get("Key", "")
+        return f"https://talyn-test.s3.test/{key}?sig=put"
 
     def head_object(self, Bucket, Key):
         if Key not in self.objects:
@@ -166,11 +163,13 @@ def clamav(monkeypatch):
         server.stop()
 
 
-# ── Presign: the size cap must be the server's ───────────────────────────────
+# ── Presign: a PUT URL with the cap alongside ─────────────────────────────────
 
 
-def test_presign_enforces_size_in_the_post_policy(client, s3, creator_headers):
-    """A presigned PUT cannot cap size; the POST policy can."""
+def test_presign_returns_a_put_url_with_signed_content_type(client, s3, creator_headers):
+    """R2 does not implement POST Object, so uploads go through presigned
+    PUT. The Content-Type is part of the signature: the uploader must send
+    exactly what was declared."""
     r = client.post(
         "/v1/uploads/presigned",
         json={"purpose": "resource", "filename": "notes.pdf",
@@ -180,13 +179,36 @@ def test_presign_enforces_size_in_the_post_policy(client, s3, creator_headers):
     assert r.status_code == 201, r.text
     body = r.json()
 
-    assert body["method"] == "POST"
-    ranges = [
-        c for c in s3.post_conditions
-        if isinstance(c, list) and c[0] == "content-length-range"
-    ]
-    assert ranges, "no content-length-range in the signed policy"
-    assert ranges[0][2] == config_module.settings.max_resource_bytes
+    assert body["method"] == "PUT"
+    assert "fields" not in body
+    assert body["max_bytes"] == config_module.settings.max_resource_bytes
+
+    assert s3.put_params, "no presigned PUT was minted"
+    op, params = s3.put_params[-1]
+    assert op == "put_object"
+    assert params["ContentType"] == "application/pdf"
+
+
+def test_size_cap_is_enforced_at_verify_not_at_upload(client, s3, creator_headers):
+    """A PUT URL cannot carry a cap, so verify() is what makes it real:
+    an over-sized object is deleted, not attached."""
+    import pytest
+
+    from app.services import uploads as upload_service
+
+    key = client.post(
+        "/v1/uploads/presigned",
+        json={"purpose": "resource", "filename": "big.pdf",
+              "content_type": "application/pdf"},
+        headers=creator_headers,
+    ).json()["storage_key"]
+    _put(s3, key, size=config_module.settings.max_resource_bytes + 1)
+
+    assert key in s3.objects
+    with pytest.raises(upload_service.storage.UploadRejected):
+        upload_service.verify(key)
+    assert key not in s3.objects
+    assert key in s3.deleted
 
 
 def test_presign_rejects_oversized_declaration_without_minting_a_key(
