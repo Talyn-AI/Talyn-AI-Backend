@@ -28,8 +28,8 @@ class MissionTemplate(Base):
     __tablename__ = "mission_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    creator_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), index=True
+    creator_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(1000), default="")
@@ -54,7 +54,7 @@ class MissionTemplateStep(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     template_id: Mapped[int] = mapped_column(
-        ForeignKey("mission_templates.id"), index=True
+        ForeignKey("mission_templates.id", ondelete="CASCADE"), index=True
     )
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(1000), default="")
@@ -69,7 +69,7 @@ class Mission(Base):
     __tablename__ = "missions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     # Which catalogue entry this was adopted from. NULL for missions the
     # learner wrote themselves before the catalogue existed, and also once a
     # creator withdraws the template they came from - the mission is the
@@ -101,7 +101,7 @@ class MissionStep(Base):
     __tablename__ = "mission_steps"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    mission_id: Mapped[int] = mapped_column(ForeignKey("missions.id"), index=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("missions.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(1000), default="")
     order: Mapped[int] = mapped_column(Integer)

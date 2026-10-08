@@ -28,9 +28,12 @@ class Course(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Marketplace fields (creator MVP)
+    # Marketplace fields (creator MVP). SET NULL, not CASCADE: courses
+    # outlive their creator. Deleting a creator detaches their courses (an
+    # admin can reassign or remove them) instead of destroying other
+    # learners' enrollments and progress.
     creator_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True, index=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     category: Mapped[str] = mapped_column(String(120), default="")
     outcomes: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
@@ -90,7 +93,7 @@ class Enrollment(Base):
     __tablename__ = "enrollments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
     enrolled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -105,7 +108,7 @@ class LessonProgress(Base):
     __tablename__ = "lesson_progress"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     lesson_id: Mapped[int] = mapped_column(ForeignKey("lessons.id"), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

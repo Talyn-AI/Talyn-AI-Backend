@@ -11,8 +11,8 @@ class BuddyMatch(Base):
     __tablename__ = "buddy_matches"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)  # requesting learner
-    buddy_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)  # requesting learner
+    buddy_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     match_score: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | accepted | declined
     matched_at: Mapped[datetime] = mapped_column(

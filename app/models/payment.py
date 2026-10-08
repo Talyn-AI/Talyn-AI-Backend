@@ -39,7 +39,7 @@ class Payment(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     # Exactly one of these is set (enforced by ck_payments_single_item):
     # a course purchase, or a generated-schedule unlock for a material.
     course_id: Mapped[int | None] = mapped_column(

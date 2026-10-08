@@ -47,14 +47,19 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
-    xp_events: Mapped[list["XpEvent"]] = relationship(back_populates="user")  # noqa: F821
-    quiz_results: Mapped[list["QuizResult"]] = relationship(back_populates="user")  # noqa: F821
-    enrollments: Mapped[list["Enrollment"]] = relationship(back_populates="user")  # noqa: F821
-    lesson_progress: Mapped[list["LessonProgress"]] = relationship(back_populates="user")  # noqa: F821
-    badges: Mapped[list["Badge"]] = relationship(back_populates="user")  # noqa: F821
-    missions: Mapped[list["Mission"]] = relationship(back_populates="user")  # noqa: F821
-    mission_templates: Mapped[list["MissionTemplate"]] = relationship(back_populates="creator")  # noqa: F821
+    # Relationships. passive_deletes throughout: the database owns the
+    # delete behavior through ON DELETE actions (CASCADE for private rows,
+    # SET NULL for shared/audit rows), so the ORM must not "help" by
+    # nullifying children's foreign keys — on NOT NULL columns that help is
+    # an IntegrityError. Without this, deleting a user row directly (SQL
+    # console, dashboard) fails even though every FK declares an action.
+    xp_events: Mapped[list["XpEvent"]] = relationship(back_populates="user", passive_deletes=True)  # noqa: F821
+    quiz_results: Mapped[list["QuizResult"]] = relationship(back_populates="user", passive_deletes=True)  # noqa: F821
+    enrollments: Mapped[list["Enrollment"]] = relationship(back_populates="user", passive_deletes=True)  # noqa: F821
+    lesson_progress: Mapped[list["LessonProgress"]] = relationship(back_populates="user", passive_deletes=True)  # noqa: F821
+    badges: Mapped[list["Badge"]] = relationship(back_populates="user", passive_deletes=True)  # noqa: F821
+    missions: Mapped[list["Mission"]] = relationship(back_populates="user", passive_deletes=True)  # noqa: F821
+    mission_templates: Mapped[list["MissionTemplate"]] = relationship(back_populates="creator", passive_deletes=True)  # noqa: F821
 
     def __repr__(self) -> str:
         return f"<User id={self.id} name={self.learner_name!r}>"

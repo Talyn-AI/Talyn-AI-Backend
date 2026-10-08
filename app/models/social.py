@@ -11,7 +11,7 @@ class CommunityPost(Base):
     __tablename__ = "community_posts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(255))
     body: Mapped[str] = mapped_column(String(5000))
     created_at: Mapped[datetime] = mapped_column(
@@ -28,8 +28,8 @@ class CommunityReply(Base):
     __tablename__ = "community_replies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    post_id: Mapped[int] = mapped_column(ForeignKey("community_posts.id"), index=True)
-    author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("community_posts.id", ondelete="CASCADE"), index=True)
+    author_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     body: Mapped[str] = mapped_column(String(2000))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -42,8 +42,8 @@ class DirectMessage(Base):
     __tablename__ = "direct_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     body: Mapped[str] = mapped_column(String(2000))
     read_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -11,7 +11,7 @@ class QuizResult(Base):
     __tablename__ = "quiz_results"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     course_id: Mapped[int | None] = mapped_column(
         ForeignKey("courses.id"), nullable=True, index=True
     )
@@ -36,7 +36,7 @@ class XpEvent(Base):
     __tablename__ = "xp_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     activity: Mapped[str] = mapped_column(String(30))  # XpActivityType value
     amount: Mapped[int] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -51,7 +51,7 @@ class Badge(Base):
     __tablename__ = "badges"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     badge_id: Mapped[str] = mapped_column(String(120))
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(String(500), default="")
@@ -69,7 +69,7 @@ class StudyPlan(Base):
     __tablename__ = "study_plans"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     daily_goal_minutes: Mapped[int] = mapped_column(Integer, default=30)
     weekly_target_lessons: Mapped[int] = mapped_column(Integer, default=3)
     focus_topics: Mapped[str] = mapped_column(String(1000), default="[]")

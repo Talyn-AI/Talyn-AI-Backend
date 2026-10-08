@@ -40,7 +40,7 @@ class AnalyticsEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True, index=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     event: Mapped[str] = mapped_column(String(50), index=True)
     course_id: Mapped[int | None] = mapped_column(
