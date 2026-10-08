@@ -100,6 +100,7 @@ def start_purchase(
                 Payment.user_id == current_user.id,
                 Payment.course_id == course_id,
                 Payment.status == PAYMENT_PENDING,
+                Payment.created_at >= pay.fresh_pending_after(),
             )
             .order_by(Payment.id.desc())
         )
@@ -202,6 +203,7 @@ def payment_status(
             Payment.user_id == current_user.id,
             Payment.course_id == course_id,
             Payment.status == PAYMENT_PENDING,
+            Payment.created_at >= pay.fresh_pending_after(),
         )
         .order_by(Payment.id.desc())
     )

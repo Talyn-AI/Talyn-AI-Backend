@@ -395,6 +395,7 @@ def purchase_schedule(
                 Payment.user_id == current_user.id,
                 Payment.material_id == material.id,
                 Payment.status == PAYMENT_PENDING,
+                Payment.created_at >= pay.fresh_pending_after(),
             )
             .order_by(Payment.id.desc())
         )
@@ -486,6 +487,7 @@ def path_payment_status(
             Payment.user_id == current_user.id,
             Payment.material_id == material.id,
             Payment.status == PAYMENT_PENDING,
+            Payment.created_at >= pay.fresh_pending_after(),
         )
         .order_by(Payment.id.desc())
     )

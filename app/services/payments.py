@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -45,6 +45,19 @@ KIBO_PER_NAIRA = 100
 DEFAULT_API_URL = "https://api.paystack.co"
 
 REQUEST_TIMEOUT_SECONDS = 15.0
+
+# A pending row older than this counts as an abandoned checkout. It is
+# ignored when looking for an in-flight payment (a new checkout is minted
+# instead) and invisible to the status endpoints — but it is never mutated:
+# if money moves late against the old reference, the webhook and verify
+# paths still settle it, because a confirmed charge is a confirmed charge
+# regardless of how long the learner took.
+PENDING_TTL_HOURS = 24
+
+
+def fresh_pending_after() -> datetime:
+    """Earliest created_at a pending row may have and still count as live."""
+    return datetime.now(timezone.utc) - timedelta(hours=PENDING_TTL_HOURS)
 
 
 class PaymentError(Exception):
@@ -417,6 +430,7 @@ __all__ = [
     "mark_failed",
     "new_reference",
     "naira_to_kobo",
+    "fresh_pending_after",
     "path_paid_for",
     "paystack_enabled",
     "send_path_receipt",
